@@ -93,6 +93,11 @@ public class GroupController {
 		return groupService.detail(g, owner);
 	}
 
+	@GetMapping("/{id}")
+	public GroupDetail detail(@RequestAttribute("userId") Long userId, @PathVariable("id") Long id) {
+		return groupService.detail(groupService.get(id), groupService.membership(id, userId));
+	}
+
 	/** 이름만 바꿀 수 있고, 방장만 */
 	@PatchMapping("/{id}")
 	public GroupDetail rename(@RequestAttribute("userId") Long userId, @PathVariable("id") Long id, @Valid @RequestBody Rename body) {
