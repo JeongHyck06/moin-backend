@@ -103,6 +103,7 @@ class MoinFlowTest {
 				.andExpect(jsonPath("$.card.periodStart").value("2026-09-16"))
 				.andExpect(jsonPath("$.card.deadline").value("2026-09-16T19:00:00Z")) // 9/17 04:00 KST
 				.andExpect(jsonPath("$.card.members[0].nickname").value("정혁"))
+				.andExpect(jsonPath("$.isOwner").value(true))
 				.andExpect(jsonPath("$.inviteCode", matchesPattern("[A-HJ-NP-Z2-9]{6}")))
 				.andExpect(jsonPath("$.reminderTime").value("08:00"))
 				.andExpect(jsonPath("$.streak.current").value(0))
@@ -149,6 +150,7 @@ class MoinFlowTest {
 		mvc.perform(post("/groups/invite/" + code + "/join").header("Authorization", "Bearer " + friend))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.card.joinsNextPeriod").value(true))
+				.andExpect(jsonPath("$.isOwner").value(false))
 				.andExpect(jsonPath("$.card.state").value("WAITING_OTHERS"))
 				.andExpect(jsonPath("$.card.activeCount").value(1)); // 이번 기간엔 집계 안 됨
 		mvc.perform(post("/groups/invite/" + code + "/join").header("Authorization", "Bearer " + friend))
