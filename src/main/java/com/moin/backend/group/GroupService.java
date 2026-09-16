@@ -1,0 +1,137 @@
+package com.moin.backend.group;
+
+import static java.util.function.Function.identity;
+import static java.util.stream.Collectors.toMap;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+import com.fasterxml.jackson.annotation.JsonFormat;
+
+import com.moin.backend.checkin.CheckIn;
+import com.moin.backend.period.Period;
+import com.moin.backend.period.PeriodRepository;
+import com.moin.backend.period.PeriodService;
+import com.moin.backend.user.User;
+import com.moin.backend.user.UserRepository;
+
+import lombok.RequiredArgsConstructor;
+
+/** 홈 카드 · 그룹 상세 응답을 조립한다 */
+@Service
+@RequiredArgsConstructor
+public class GroupService {
+
+	private final GroupRepository groups;
+	private final GroupMemberRepository members;
+	private final UserRepository users;
+	private final PeriodRepository periods;
+	private final PeriodService periodService;
+
+	@Value("${moin.crisis-hours}")
+	private int crisisHours;
+
+	/** 선언 순서가 홈 정렬 순서 (Figma GroupCard 설명) */
+	public enum State { NEEDS_ME, WAITING_OTHERS, COMPLETE, CRISIS }
+
+	public record MemberStatus(Long userId, String nickname, String avatarUrl, boolean done, int doneCount, String videoUrl) {}
+
+	public record GroupCard(Long id, String name, Group.Frequency frequency, Integer weeklyTarget,
+			@JsonFormat(pattern = "HH:mm") LocalTime resetTime,
+			State state, int streak, int activeCount, int completedCount, int allowedAbsences,
+			boolean myDone, int myDoneCount, boolean joinsNextPeriod,
+			LocalDate periodStart, Instant deadline, List<MemberStatus> members) {}
+
+	public record GroupDetail(GroupCard card, String inviteCode, @JsonFormat(pattern = "HH:mm") LocalTime reminderTime,
+			boolean streakFreeze, boolean muted,
+			PeriodService.Streak streak, int threshold, int periodVideoCount,
+			int monthCompletedPeriods, int monthClosedPeriods) {}
+
+	public record InvitePreview(Long id, String name, Group.Frequency frequency, Integer weeklyTarget,
+			@JsonFormat(pattern = "HH:mm") LocalTime resetTime, int memberCount, int streak,
+			List<MemberStatus> members, boolean alreadyMember, LocalDate joinsFrom) {}
+
+	public Group get(Long id) {
+		return groups.findById(id)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "그룹을 찾을 수 없어요"));
+	}
+
+	public Group byInviteCode(String code) {
+		return groups.findByInviteCode(code.trim().toUpperCase())
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "초대코드를 확인해주세요"));
+	}
+
+	public GroupMember membership(Long groupId, Long userId) {
+		return members.findByGroupIdAndUserId(groupId, userId)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "그룹 멤버만 볼 수 있어요"));
+	}
+
+	public InvitePreview preview(Group g, Long me) {
+		GroupCard card = card(g, me);
+		boolean already = members.findByGroupIdAndUserId(g.getId(), me).isPresent();
+		LocalDate joinsFrom = periodService.periodEnd(g, periodService.currentPeriodStart(g));
+		return new InvitePreview(g.getId(), g.getName(), g.getFrequency(), g.getWeeklyTarget(), g.getResetTime(),
+				members.findByGroupId(g.getId()).size(), card.streak(), card.members(), already, joinsFrom);
+	}
+
+	public List<GroupCard> home(Long me) {
+		List<Long> ids = members.findByUserId(me).stream().map(GroupMember::getGroupId).toList();
+		return groups.findAllById(ids).stream()
+				.map(g -> card(g, me))
+				.sorted(Comparator.comparing(GroupCard::state))
+				.toList();
+	}
+
+	public GroupCard card(Group g, Long me) {
+		LocalDate start = periodService.currentPeriodStart(g);
+		List<GroupMember> active = periodService.activeMembers(g, start);
+		Map<Long, List<CheckIn>> byUser = periodService.checkInsByUser(g, start);
+		Map<Long, User> userById = users.findAllById(active.stream().map(GroupMember::getUserId).toList())
+				.stream().collect(toMap(User::getId, identity()));
+
+		List<MemberStatus> statuses = active.stream().map(m -> {
+			User u = userById.get(m.getUserId());
+			List<CheckIn> cs = byUser.getOrDefault(m.getUserId(), List.of());
+			String video = cs.isEmpty() ? null : cs.get(cs.size() - 1).getVideoUrl();
+			return new MemberStatus(u.getId(), u.getNickname(), u.getAvatarUrl(), cs.size() >= g.target(), cs.size(), video);
+		}).sorted(Comparator.comparing(MemberStatus::done).reversed().thenComparing(MemberStatus::userId)).toList();
+
+		int completed = (int) statuses.stream().filter(MemberStatus::done).count();
+		MemberStatus mine = statuses.stream().filter(s -> s.userId().equals(me)).findFirst().orElse(null);
+		boolean joinsNext = mine == null;
+		boolean myDone = mine != null && mine.done();
+		boolean needsMe = mine != null && !myDone;
+		Instant now = periodService.now();
+		Instant deadline = periodService.deadline(g, start);
+
+		State state;
+		if (needsMe && !now.plus(Duration.ofHours(crisisHours)).isBefore(deadline)) state = State.CRISIS;
+		else if (needsMe) state = State.NEEDS_ME;
+		else if (completed == statuses.size()) state = State.COMPLETE;
+		else state = State.WAITING_OTHERS;
+
+		return new GroupCard(g.getId(), g.getName(), g.getFrequency(), g.getWeeklyTarget(), g.getResetTime(),
+				state, periodService.streak(g).current(), statuses.size(), completed, g.getAllowedAbsences(),
+				myDone, mine == null ? 0 : mine.doneCount(), joinsNext, start, deadline, statuses);
+	}
+
+	public GroupDetail detail(Group g, GroupMember membership) {
+		GroupCard card = card(g, membership.getUserId());
+		LocalDate monthStart = periodService.today(g).withDayOfMonth(1);
+		List<Period> month = periods.findByGroupIdAndPeriodEndAfterAndPeriodStartBefore(g.getId(), monthStart, monthStart.plusMonths(1));
+		int completedPeriods = (int) month.stream().filter(p -> p.getStatus() != Period.Status.FAILED).count();
+		int videos = card.members().stream().mapToInt(MemberStatus::doneCount).sum();
+		return new GroupDetail(card, g.getInviteCode(), g.getReminderTime(), g.isStreakFreeze(), membership.isMuted(),
+				periodService.streak(g), card.activeCount() - g.getAllowedAbsences(), videos, completedPeriods, month.size());
+	}
+}
