@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -47,15 +48,16 @@ public class GroupController {
 	private final PeriodService periodService;
 
 	public record CreateGroup(
-			@NotBlank @Size(max = 20) String name,
-			@NotNull Group.Frequency frequency,
-			@Min(1) @Max(7) Integer weeklyTarget,
+			@NotBlank(message = "그룹 이름을 입력해주세요") @Size(max = 20, message = "그룹 이름은 20자까지예요") String name,
+			@NotNull(message = "인증 주기를 선택해주세요") Group.Frequency frequency,
+			@Min(value = 1, message = "주당 횟수는 1회 이상이에요") @Max(value = 7, message = "주당 횟수는 7회까지예요") Integer weeklyTarget,
 			LocalTime resetTime,
 			LocalTime reminderTime,
-			@Min(0) @Max(10) Integer allowedAbsences,
+			@Min(value = 0, message = "결석 허용 인원은 0명 이상이에요") @Max(value = 10, message = "결석 허용 인원은 10명까지예요") Integer allowedAbsences,
 			Boolean streakFreeze) {}
 
-	public record Rename(@NotBlank @Size(max = 20) String name) {}
+	public record Rename(@NotBlank(message = "그룹 이름을 입력해주세요") @Size(max = 20, message = "그룹 이름은 20자까지예요") String name) {}
+	public record Mute(boolean muted) {}
 
 	/** 홈, 상태 순서(NEEDS_ME, WAITING_OTHERS, COMPLETE, CRISIS)로 정렬 */
 	@GetMapping
@@ -93,6 +95,11 @@ public class GroupController {
 		return groupService.detail(g, owner);
 	}
 
+	@GetMapping("/{id}")
+	public GroupDetail detail(@RequestAttribute("userId") Long userId, @PathVariable("id") Long id) {
+		return groupService.detail(groupService.get(id), groupService.membership(id, userId));
+	}
+
 	/** 이름만 바꿀 수 있고, 방장만 */
 	@PatchMapping("/{id}")
 	public GroupDetail rename(@RequestAttribute("userId") Long userId, @PathVariable("id") Long id, @Valid @RequestBody Rename body) {
@@ -101,6 +108,15 @@ public class GroupController {
 		if (!g.getOwnerId().equals(userId)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "방장만 바꿀 수 있어요");
 		g.setName(body.name());
 		return groupService.detail(groups.save(g), me);
+	}
+
+	/** 그룹별 음소거, 알림 종류 토글과 별개로 이 그룹 알림만 끔 */
+	@PutMapping("/{id}/mute")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void mute(@RequestAttribute("userId") Long userId, @PathVariable("id") Long id, @RequestBody Mute body) {
+		GroupMember me = groupService.membership(id, userId);
+		me.setMuted(body.muted());
+		members.save(me);
 	}
 
 	/** 참여 전 미리보기, 멤버가 아니어도 코드만 있으면 조회 가능 */

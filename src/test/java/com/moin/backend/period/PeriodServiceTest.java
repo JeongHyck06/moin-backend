@@ -24,7 +24,7 @@ import com.moin.backend.period.PeriodService.Streak;
 class PeriodServiceTest {
 
 	static final Instant NOW = Instant.parse("2026-09-16T01:00:00Z");
-	final PeriodService svc = new PeriodService(null, null, null, Clock.fixed(NOW, ZoneOffset.UTC), ZoneId.of("Asia/Seoul"));
+	final PeriodService svc = new PeriodService(null, null, null, null, Clock.fixed(NOW, ZoneOffset.UTC), ZoneId.of("Asia/Seoul"));
 
 	static Group group(Group.Frequency f, int allowedAbsences, boolean freeze) {
 		Group g = new Group();

@@ -13,13 +13,16 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.moin.backend.checkin.CheckIn;
 import com.moin.backend.checkin.CheckInRepository;
 import com.moin.backend.group.Group;
 import com.moin.backend.group.GroupMember;
 import com.moin.backend.group.GroupMemberRepository;
+import com.moin.backend.group.GroupRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -28,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class PeriodService {
 
+	private final GroupRepository groups;
 	private final GroupMemberRepository members;
 	private final CheckInRepository checkIns;
 	private final PeriodRepository periods;
@@ -114,5 +118,34 @@ public class PeriodService {
 
 	public Streak streak(Group g) {
 		return streak(periods.findByGroupIdOrderByPeriodStartAsc(g.getId()));
+	}
+
+	/** ponytail: 매번 전체 그룹 순회, 그룹이 수천 개면 resetTime 기준으로 대상만 조회 */
+	@Scheduled(fixedDelayString = "${moin.close-interval-ms}")
+	@Transactional
+	public void closeAllDuePeriods() {
+		groups.findAll().forEach(this::closeDuePeriods);
+	}
+
+	/**
+	 * 마감 시각이 지난 기간을 순서대로 닫아 periods 에 기록, 서버가 며칠 꺼져 있었어도 빠진 기간을 전부 채움
+	 * logicalDate 는 저장 시점에 확정되므로 닫힌 기간에 인증이 뒤늦게 섞일 수 없음
+	 */
+	@Transactional
+	public void closeDuePeriods(Group g) {
+		LocalDate current = currentPeriodStart(g);
+		LocalDate next = periods.findTopByGroupIdOrderByPeriodStartDesc(g.getId())
+				.map(Period::getPeriodEnd)
+				.orElse(g.getFirstPeriodStart());
+		while (next.isBefore(current)) {
+			Map<Long, List<CheckIn>> done = checkInsByUser(g, next);
+			long missing = activeMembers(g, next).stream()
+					.filter(m -> done.getOrDefault(m.getUserId(), List.of()).size() < g.target())
+					.count();
+			boolean freezeAvailable = !periods.existsByGroupIdAndStatusAndPeriodStartBetween(
+					g.getId(), Period.Status.FROZEN, next.withDayOfMonth(1), next.with(TemporalAdjusters.lastDayOfMonth()));
+			periods.save(new Period(g.getId(), next, periodEnd(g, next), status(g, missing, freezeAvailable)));
+			next = periodEnd(g, next);
+		}
 	}
 }
