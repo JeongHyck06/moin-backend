@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface CheckInRepository extends JpaRepository<CheckIn, Long> {
 	List<CheckIn> findByGroupIdAndLogicalDateBetweenOrderByCreatedAtAsc(Long groupId, LocalDate from, LocalDate toInclusive);
 	long countByUserId(Long userId);
+	List<CheckIn> findByGroupIdAndUserId(Long groupId, Long userId);
 	long countByGroupIdAndLogicalDateBetween(Long groupId, LocalDate from, LocalDate toInclusive);
 	boolean existsByGroupIdAndUserIdAndLogicalDate(Long groupId, Long userId, LocalDate logicalDate);
 }
