@@ -222,6 +222,52 @@ class MoinFlowTest {
 				.andExpect(jsonPath("$.streak.longest").value(2))
 				.andExpect(jsonPath("$.monthClosedPeriods").value(5))
 				.andExpect(jsonPath("$.monthCompletedPeriods").value(2));
+
+		// --- 피드: 9/16 은 방장 혼자, 9/17 은 친구만 인증, 오늘(9/21)은 아무도 ---
+		String feedUrl = "/groups/" + groupId + "/check-ins";
+		mvc.perform(get(feedUrl).param("date", "2026-09-16").header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.date").value("2026-09-16"))
+				.andExpect(jsonPath("$.completedCount").value(1))
+				.andExpect(jsonPath("$.activeCount").value(1)) // 친구는 9/17 부터
+				.andExpect(jsonPath("$.members[0].nickname").value("정혁"))
+				.andExpect(jsonPath("$.members[0].videoUrl").value(videoUrl));
+		mvc.perform(get(feedUrl).param("date", "2026-09-17").header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.completedCount").value(1))
+				.andExpect(jsonPath("$.activeCount").value(2))
+				.andExpect(jsonPath("$.members[0].nickname").value("지연")) // 영상 있는 멤버가 앞
+				.andExpect(jsonPath("$.members[1].nickname").value("정혁"))
+				.andExpect(jsonPath("$.members[1].videoUrl").isEmpty());
+		mvc.perform(get(feedUrl).header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.date").value("2026-09-21"))
+				.andExpect(jsonPath("$.completedCount").value(0))
+				.andExpect(jsonPath("$.activeCount").value(2));
+		mvc.perform(get(feedUrl).param("date", "어제").header("Authorization", "Bearer " + owner))
+				.andExpect(status().isBadRequest());
+		mvc.perform(get(feedUrl).header("Authorization", "Bearer " + login("외부인")))
+				.andExpect(status().isForbidden());
+
+		// --- 달력: 9월 마감 5개(PERFECT, PASS, FAILED x3), 인증 2건, 완벽 비율 20% ---
+		String calendarUrl = "/groups/" + groupId + "/calendar";
+		mvc.perform(get(calendarUrl).param("month", "2026-09").header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.month").value("2026-09"))
+				.andExpect(jsonPath("$.today").value("2026-09-21"))
+				.andExpect(jsonPath("$.periods.length()").value(5))
+				.andExpect(jsonPath("$.periods[0].start").value("2026-09-16"))
+				.andExpect(jsonPath("$.periods[0].end").value("2026-09-17"))
+				.andExpect(jsonPath("$.periods[0].status").value("PERFECT"))
+				.andExpect(jsonPath("$.periods[1].status").value("PASS"))
+				.andExpect(jsonPath("$.periods[4].status").value("FAILED"))
+				.andExpect(jsonPath("$.totalCheckIns").value(2))
+				.andExpect(jsonPath("$.longestStreak").value(2))
+				.andExpect(jsonPath("$.perfectRate").value(20));
+		mvc.perform(get(calendarUrl).header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.month").value("2026-09")); // 기본값은 이번 달
+		mvc.perform(get(calendarUrl).param("month", "2026-10").header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.periods").isEmpty())
+				.andExpect(jsonPath("$.totalCheckIns").value(0))
+				.andExpect(jsonPath("$.perfectRate").value(0));
+		mvc.perform(get(calendarUrl).param("month", "9월").header("Authorization", "Bearer " + owner))
+				.andExpect(status().isBadRequest());
 	}
 
 	private String login(String nickname) throws Exception {
