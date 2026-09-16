@@ -1,0 +1,12 @@
+package com.moin.backend.period;
+
+import java.time.LocalDate;
+import java.util.List;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface PeriodRepository extends JpaRepository<Period, Long> {
+	List<Period> findByGroupIdOrderByPeriodStartAsc(Long groupId);
+	/** [from, to) 구간과 겹치는 기간. WEEKLY 가 월 경계를 넘는 경우까지 잡는다 */
+	List<Period> findByGroupIdAndPeriodEndAfterAndPeriodStartBefore(Long groupId, LocalDate from, LocalDate to);
+}
