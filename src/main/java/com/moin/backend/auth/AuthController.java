@@ -46,8 +46,8 @@ public class AuthController {
 	@Value("${moin.session-days}")
 	private int sessionDays;
 
-	public record KakaoLogin(@NotBlank String accessToken) {}
-	public record DevLogin(@NotBlank @Size(max = 20) String nickname) {}
+	public record KakaoLogin(@NotBlank(message = "카카오 토큰이 필요해요") String accessToken) {}
+	public record DevLogin(@NotBlank(message = "닉네임을 입력해주세요") @Size(max = 20, message = "닉네임은 20자까지예요") String nickname) {}
 	public record LoginResponse(String token, Long userId, String nickname, String avatarUrl) {}
 	/** 카카오 /v2/user/me 응답 중 쓰는 필드만, properties 는 동의 항목에 따라 비어 올 수 있음 */
 	record KakaoUser(long id, Map<String, Object> properties) {}
