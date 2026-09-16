@@ -27,7 +27,7 @@ import com.moin.backend.user.UserRepository;
 
 import lombok.RequiredArgsConstructor;
 
-/** 홈 카드 · 그룹 상세 응답을 조립한다 */
+/** 홈 카드 · 그룹 상세 응답 조립 */
 @Service
 @RequiredArgsConstructor
 public class GroupService {
@@ -66,21 +66,21 @@ public class GroupService {
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "그룹을 찾을 수 없어요"));
 	}
 
-	/** 코드는 대문자로만 만들지만 입력은 소문자·공백 섞여 와도 받아준다 */
+	/** 코드는 대문자로만 생성, 입력은 소문자·공백이 섞여도 허용 */
 	public Group byInviteCode(String code) {
 		return groups.findByInviteCode(code.trim().toUpperCase())
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "초대코드를 확인해주세요"));
 	}
 
-	/** 그룹 상세·수정은 멤버만. 다음 기간부터 참여하는 대기 멤버도 멤버다 */
+	/** 그룹 상세·수정은 멤버만, 다음 기간부터 참여하는 대기 멤버도 멤버 */
 	public GroupMember membership(Long groupId, Long userId) {
 		return members.findByGroupIdAndUserId(groupId, userId)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "그룹 멤버만 볼 수 있어요"));
 	}
 
 	/**
-	 * Join 화면 미리보기. memberCount 는 대기 멤버까지 포함한 전체, members 는 이번 기간 활동 멤버만.
-	 * joinsFrom 은 지금 참여하면 집계가 시작되는 날 = 현재 기간의 종료일
+	 * Join 화면 미리보기, memberCount 는 대기 멤버까지 포함한 전체, members 는 이번 기간 활동 멤버만
+	 * joinsFrom 은 지금 참여하면 집계가 시작되는 날 = 현재 기간 종료일
 	 */
 	public InvitePreview preview(Group g, Long me) {
 		GroupCard card = card(g, me);
@@ -99,7 +99,7 @@ public class GroupService {
 	}
 
 	/**
-	 * 홈 카드 1장. me 가 활동 멤버가 아니면(대기 멤버·비멤버) 재촉 대상이 아니라서 NEEDS_ME/CRISIS 가 되지 않는다.
+	 * 홈 카드 1장, me 가 활동 멤버가 아니면(대기 멤버·비멤버) 재촉 대상이 아니라 NEEDS_ME/CRISIS 불가
 	 * CRISIS 는 마감까지 crisisHours 이내이고 내가 미완료일 때만
 	 */
 	public GroupCard card(Group g, Long me) {
@@ -136,7 +136,7 @@ public class GroupService {
 	}
 
 	/**
-	 * 그룹 상세. threshold = 이 인원만 인증하면 PASS ("3명이면 완료").
+	 * 그룹 상세, threshold = 이 인원만 인증하면 PASS ("3명이면 완료")
 	 * monthClosed/Completed 는 이번 달과 겹치는 마감 기간 기준 (§4 통계 정의)
 	 */
 	public GroupDetail detail(Group g, GroupMember membership) {

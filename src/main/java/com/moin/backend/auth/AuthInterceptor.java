@@ -11,7 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 
-/** Authorization: Bearer {token} 을 검증해 request attribute "userId" 로 넘긴다 */
+/** Authorization: Bearer {token} 검증 후 request attribute "userId" 로 전달 */
 @Component
 @RequiredArgsConstructor
 public class AuthInterceptor implements HandlerInterceptor {

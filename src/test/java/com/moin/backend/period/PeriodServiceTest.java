@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 import com.moin.backend.group.Group;
 import com.moin.backend.period.PeriodService.Streak;
 
-/** 순수 함수만. Spring 없이 돈다. 기준 시각 2026-09-16(수) 10:00 KST */
+/** 순수 함수만, Spring 없이 실행, 기준 시각 2026-09-16(수) 10:00 KST */
 class PeriodServiceTest {
 
 	static final Instant NOW = Instant.parse("2026-09-16T01:00:00Z");

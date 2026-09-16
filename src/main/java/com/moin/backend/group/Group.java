@@ -15,7 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/** 인증 그룹. 규칙 컬럼(frequency, resetTime, allowedAbsences, streakFreeze)의 의미는 BACKEND_DESIGN.md §2 */
+/** 인증 그룹, 규칙 컬럼(frequency, resetTime, allowedAbsences, streakFreeze) 의미는 BACKEND_DESIGN.md §2 */
 @Entity
 @Table(name = "groups")
 @Getter
@@ -32,15 +32,15 @@ public class Group {
 	@Column(nullable = false, length = 20)
 	private String name;
 
-	/** 생성 후 변경 불가. 기간 경계가 바뀌면 기존 periods 가 무의미해진다 */
+	/** 생성 후 변경 불가, 기간 경계가 바뀌면 기존 periods 가 무의미해짐 */
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
 	private Frequency frequency;
 
-	/** WEEKLY 일 때만. 일주일에 몇 번 인증해야 완료인지 */
+	/** WEEKLY 일 때만, 일주일에 몇 번 인증해야 완료인지 */
 	private Integer weeklyTarget;
 
-	/** 이 시각에 새 하루가 시작. 이전 인증은 전날로 친다 */
+	/** 이 시각에 새 하루가 시작, 이전 인증은 전날 것으로 취급 */
 	@Column(nullable = false)
 	private LocalTime resetTime;
 
@@ -51,7 +51,7 @@ public class Group {
 	@Column(nullable = false)
 	private int allowedAbsences;
 
-	/** 월 1회, 실패한 기간을 FROZEN 으로 바꿔 스트릭을 지킨다 */
+	/** 월 1회, 실패한 기간을 FROZEN 으로 바꿔 스트릭 유지 */
 	@Column(nullable = false)
 	private boolean streakFreeze;
 
@@ -61,7 +61,7 @@ public class Group {
 	@Column(nullable = false)
 	private Long ownerId;
 
-	/** 첫 기간 시작일. 마감 스케줄러가 여기서부터 빠진 기간을 채운다 */
+	/** 첫 기간 시작일, 마감 스케줄러가 여기서부터 빠진 기간을 채움 */
 	@Column(nullable = false)
 	private LocalDate firstPeriodStart;
 

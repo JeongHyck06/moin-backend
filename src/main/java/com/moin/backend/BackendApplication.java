@@ -23,13 +23,13 @@ public class BackendApplication {
 		SpringApplication.run(BackendApplication.class, args);
 	}
 
-	/** 시간은 전부 이 Clock 을 거친다. 서비스에서 Instant.now() 직접 호출 금지 — 테스트가 시간을 못 움직인다 */
+	/** 모든 시각 계산의 기준, 서비스에서 Instant.now() 직접 호출 금지 (테스트가 시간을 못 움직임) */
 	@Bean
 	Clock clock() {
 		return Clock.systemUTC();
 	}
 
-	/** 그룹 리셋 시각(04:00)을 해석하는 기준 존. 사용자별 존은 두지 않는다 */
+	/** 그룹 리셋 시각(04:00) 해석 기준 존, 사용자별 존은 없음 */
 	@Bean
 	ZoneId zone(@Value("${moin.zone}") String zone) {
 		return ZoneId.of(zone);

@@ -13,7 +13,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/** 그룹 소속 1건. 방장도 여기 한 행 있다. (group_id, user_id) 유니크 */
+/** 그룹 소속 1건, 방장도 한 행 존재, (group_id, user_id) 유니크 */
 @Entity
 @Table(name = "group_members", uniqueConstraints = @UniqueConstraint(columnNames = { "group_id", "user_id" }))
 @Getter
@@ -31,7 +31,7 @@ public class GroupMember {
 	@Column(nullable = false)
 	private Long userId;
 
-	/** 이 날(기간 시작일)부터 집계에 포함. 초대로 들어오면 다음 기간 시작일 */
+	/** 이 날(기간 시작일)부터 집계에 포함, 초대로 들어오면 다음 기간 시작일 */
 	@Column(nullable = false)
 	private LocalDate activeFrom;
 

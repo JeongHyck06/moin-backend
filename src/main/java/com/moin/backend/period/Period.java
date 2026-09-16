@@ -13,7 +13,7 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** 마감된 기간 하나의 결과. 스트릭 · 달력 · 달성률은 전부 여기서 파생 */
+/** 마감된 기간 하나의 결과, 스트릭 · 달력 · 달성률은 전부 여기서 파생 */
 @Entity
 @Table(name = "periods", uniqueConstraints = @UniqueConstraint(columnNames = { "group_id", "period_start" }))
 @Getter
@@ -33,7 +33,7 @@ public class Period {
 	@Column(nullable = false)
 	private LocalDate periodStart;
 
-	/** 배타. DAILY 는 start+1, WEEKLY 는 start+7 */
+	/** 배타적 종료일, DAILY 는 start+1, WEEKLY 는 start+7 */
 	@Column(nullable = false)
 	private LocalDate periodEnd;
 

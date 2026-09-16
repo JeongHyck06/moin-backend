@@ -57,15 +57,15 @@ public class GroupController {
 
 	public record Rename(@NotBlank @Size(max = 20) String name) {}
 
-	/** 홈. 상태 순서(NEEDS_ME → WAITING_OTHERS → COMPLETE → CRISIS)로 정렬 */
+	/** 홈, 상태 순서(NEEDS_ME, WAITING_OTHERS, COMPLETE, CRISIS)로 정렬 */
 	@GetMapping
 	public List<GroupCard> home(@RequestAttribute("userId") Long userId) {
 		return groupService.home(userId);
 	}
 
 	/**
-	 * 그룹 생성 + 방장 등록. WEEKLY 면 weeklyTarget 필수.
-	 * firstPeriodStart 는 frequency·resetTime 을 먼저 세팅한 뒤 계산해야 맞다 — 순서 바꾸면 NPE
+	 * 그룹 생성 + 방장 등록, WEEKLY 면 weeklyTarget 필수
+	 * firstPeriodStart 는 frequency·resetTime 세팅 뒤에 계산, 순서 바꾸면 NPE
 	 */
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
@@ -103,13 +103,13 @@ public class GroupController {
 		return groupService.detail(groups.save(g), me);
 	}
 
-	/** 참여 전 미리보기. 멤버가 아니어도 코드만 있으면 볼 수 있다 */
+	/** 참여 전 미리보기, 멤버가 아니어도 코드만 있으면 조회 가능 */
 	@GetMapping("/invite/{code}")
 	public InvitePreview preview(@RequestAttribute("userId") Long userId, @PathVariable("code") String code) {
 		return groupService.preview(groupService.byInviteCode(code), userId);
 	}
 
-	/** 참여. 이번 기간엔 집계되지 않고 다음 기간 시작일부터 활동 멤버가 된다 */
+	/** 참여, 이번 기간엔 집계 제외, 다음 기간 시작일부터 활동 멤버 */
 	@PostMapping("/invite/{code}/join")
 	@ResponseStatus(HttpStatus.CREATED)
 	public GroupDetail join(@RequestAttribute("userId") Long userId, @PathVariable("code") String code) {
@@ -122,7 +122,7 @@ public class GroupController {
 		return groupService.detail(g, m);
 	}
 
-	/** 6자 랜덤. 32^6 ≈ 10억이라 충돌 재시도 루프는 거의 안 돈다 */
+	/** 6자 랜덤, 32^6 ≈ 10억이라 충돌 재시도는 거의 없음 */
 	private String newInviteCode() {
 		String code;
 		do {

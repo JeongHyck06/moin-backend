@@ -12,7 +12,7 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** 3초 영상 인증 1건. 하루(논리 날짜) 최대 1번 */
+/** 3초 영상 인증 1건, 하루(논리 날짜) 최대 1번 */
 @Entity
 @Table(name = "check_ins", uniqueConstraints = @UniqueConstraint(columnNames = { "group_id", "user_id", "logical_date" }))
 @Getter
@@ -29,7 +29,7 @@ public class CheckIn {
 	@Column(nullable = false)
 	private Long userId;
 
-	/** 그룹 리셋 시각을 적용한 날짜. 저장 시점에 확정 */
+	/** 그룹 리셋 시각을 적용한 날짜, 저장 시점에 확정 */
 	@Column(nullable = false)
 	private LocalDate logicalDate;
 

@@ -13,7 +13,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/** 카카오 계정 1개 = 사용자 1명. 개발용 로그인은 external_id 접두어 dev: 로 구분 */
+/** 카카오 계정 1개 = 사용자 1명, 개발용 로그인은 external_id 접두어 dev: 로 구분 */
 @Entity
 @Table(name = "users")
 @Getter

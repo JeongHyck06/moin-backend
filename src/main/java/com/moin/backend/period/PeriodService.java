@@ -23,7 +23,7 @@ import com.moin.backend.group.GroupMemberRepository;
 
 import lombok.RequiredArgsConstructor;
 
-/** 논리 날짜 · 기간 경계 · 완료 판정 · 스트릭. 시간은 항상 주입된 Clock 으로 */
+/** 논리 날짜 · 기간 경계 · 완료 판정 · 스트릭, 시간은 항상 주입된 Clock 기준 */
 @Service
 @RequiredArgsConstructor
 public class PeriodService {
@@ -34,14 +34,14 @@ public class PeriodService {
 	private final Clock clock;
 	private final ZoneId zone;
 
-	/** current 안의 perfect/pass/frozen 합 = current. "완벽 10 · 프리즈 1 · 결석허용 1" */
+	/** perfect + pass + frozen = current, 화면의 "완벽 10 · 프리즈 1 · 결석허용 1" */
 	public record Streak(int current, int perfect, int pass, int frozen, int longest) {}
 
 	public Instant now() {
 		return clock.instant();
 	}
 
-	/** 리셋 시각 이전은 전날로 친다. "새벽 3:59 인증도 전날 인증으로 인정돼요" */
+	/** 리셋 시각 이전은 전날로 취급, "새벽 3:59 인증도 전날 인증으로 인정돼요" */
 	public LocalDate logicalDate(Instant at, LocalTime resetTime) {
 		LocalDateTime local = LocalDateTime.ofInstant(at, zone);
 		return local.toLocalTime().isBefore(resetTime) ? local.toLocalDate().minusDays(1) : local.toLocalDate();
@@ -51,7 +51,7 @@ public class PeriodService {
 		return logicalDate(now(), g.getResetTime());
 	}
 
-	/** 논리 날짜가 속한 기간의 시작일. WEEKLY 는 그 주 월요일 */
+	/** 논리 날짜가 속한 기간의 시작일, WEEKLY 는 그 주 월요일 */
 	public LocalDate periodStart(Group g, LocalDate logicalDate) {
 		return g.getFrequency() == Group.Frequency.DAILY
 				? logicalDate
@@ -68,7 +68,7 @@ public class PeriodService {
 		return periodEnd(g, start).atTime(g.getResetTime()).atZone(zone).toInstant();
 	}
 
-	/** 지금 열려 있는 기간의 시작일. 카드·상세·인증 저장이 전부 이 값을 기준으로 본다 */
+	/** 지금 열려 있는 기간의 시작일, 카드·상세·인증 저장 전부 이 값이 기준 */
 	public LocalDate currentPeriodStart(Group g) {
 		return periodStart(g, today(g));
 	}
@@ -78,13 +78,13 @@ public class PeriodService {
 		return members.findByGroupIdAndActiveFromLessThanEqual(g.getId(), start);
 	}
 
-	/** 기간 안의 인증을 멤버별로. 생성 순 정렬이라 마지막 원소가 최신 영상 */
+	/** 기간 안의 인증을 멤버별로 묶음, 생성 순 정렬이라 마지막 원소가 최신 영상 */
 	public Map<Long, List<CheckIn>> checkInsByUser(Group g, LocalDate start) {
 		return checkIns.findByGroupIdAndLogicalDateBetweenOrderByCreatedAtAsc(g.getId(), start, periodEnd(g, start).minusDays(1))
 				.stream().collect(groupingBy(CheckIn::getUserId));
 	}
 
-	/** 순수 함수. 미완료 인원 → 기간 상태 */
+	/** 순수 함수, 미완료 인원으로 기간 상태 결정 */
 	public static Period.Status status(Group g, long missing, boolean freezeAvailable) {
 		if (missing == 0) return Period.Status.PERFECT;
 		if (missing <= g.getAllowedAbsences()) return Period.Status.PASS;
@@ -92,7 +92,7 @@ public class PeriodService {
 		return Period.Status.FAILED;
 	}
 
-	/** 순수 함수. 오름차순 기간 목록 → 스트릭. 열려 있는 오늘 기간은 포함하지 않는다 */
+	/** 순수 함수, 오름차순 기간 목록에서 스트릭 계산, 열려 있는 오늘 기간은 제외 */
 	public static Streak streak(List<Period> asc) {
 		int longest = 0, run = 0;
 		for (Period p : asc) {

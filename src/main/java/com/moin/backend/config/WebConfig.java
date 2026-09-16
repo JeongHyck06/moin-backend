@@ -8,7 +8,7 @@ import com.moin.backend.auth.AuthInterceptor;
 
 import lombok.RequiredArgsConstructor;
 
-/** 인터셉터 하나로 인증을 건다. /error 를 빼먹으면 인터셉터가 던진 401 이 다시 인터셉터에 걸려 500 이 된다 */
+/** 인증은 인터셉터 하나로 처리, /error 를 예외에서 빼면 인터셉터가 던진 401 이 다시 걸려 500 으로 바뀜 */
 @Configuration
 @RequiredArgsConstructor
 public class WebConfig implements WebMvcConfigurer {

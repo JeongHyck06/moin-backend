@@ -26,13 +26,13 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import com.jayway.jsonpath.JsonPath;
 
-/** API 를 한 번에 훑는다. 기준 시각 2026-09-16(수) 10:00 KST, 시간은 clock.now 로 움직인다 */
+/** API 통합 흐름 검증, 기준 시각 2026-09-16(수) 10:00 KST, 시간은 clock.now 로 이동 */
 @SpringBootTest(properties = { "moin.dev-login=true", "spring.datasource.url=jdbc:h2:mem:moin-test" })
 @AutoConfigureMockMvc
 @Import(MoinFlowTest.TestClock.class)
 class MoinFlowTest {
 
-	/** now 를 바꾸면 그 이후 요청은 그 시각에 일어난 것으로 처리된다 */
+	/** now 를 바꾸면 이후 요청은 그 시각 기준으로 처리 */
 	static class MutableClock extends Clock {
 		Instant now;
 		MutableClock(Instant now) { this.now = now; }
@@ -41,7 +41,7 @@ class MoinFlowTest {
 		@Override public Instant instant() { return now; }
 	}
 
-	/** @Primary 로 BackendApplication.clock() 을 덮는다 */
+	/** @Primary 로 BackendApplication.clock() 을 대체 */
 	@TestConfiguration
 	static class TestClock {
 		@Bean @Primary

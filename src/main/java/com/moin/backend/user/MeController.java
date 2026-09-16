@@ -26,7 +26,7 @@ public class MeController {
 	private final CheckInRepository checkIns;
 	private final PeriodService periodService;
 
-	/** 마이페이지 프로필. totalStreak = 내 그룹 현재 스트릭 합, totalCheckIns = 내 인증 전체 수 */
+	/** 마이페이지 프로필, totalStreak = 내 그룹 현재 스트릭 합, totalCheckIns = 내 인증 전체 수 */
 	public record Profile(Long id, String nickname, String avatarUrl, int totalStreak, long totalCheckIns) {}
 
 	@GetMapping
