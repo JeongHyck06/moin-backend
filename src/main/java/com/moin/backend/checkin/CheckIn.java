@@ -38,4 +38,12 @@ public class CheckIn {
 
 	@Column(nullable = false)
 	private Instant createdAt;
+
+	public CheckIn(Long groupId, Long userId, LocalDate logicalDate, String videoUrl, Instant createdAt) {
+		this.groupId = groupId;
+		this.userId = userId;
+		this.logicalDate = logicalDate;
+		this.videoUrl = videoUrl;
+		this.createdAt = createdAt;
+	}
 }
