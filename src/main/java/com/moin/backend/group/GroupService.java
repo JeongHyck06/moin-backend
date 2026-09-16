@@ -66,16 +66,22 @@ public class GroupService {
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "그룹을 찾을 수 없어요"));
 	}
 
+	/** 코드는 대문자로만 만들지만 입력은 소문자·공백 섞여 와도 받아준다 */
 	public Group byInviteCode(String code) {
 		return groups.findByInviteCode(code.trim().toUpperCase())
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "초대코드를 확인해주세요"));
 	}
 
+	/** 그룹 상세·수정은 멤버만. 다음 기간부터 참여하는 대기 멤버도 멤버다 */
 	public GroupMember membership(Long groupId, Long userId) {
 		return members.findByGroupIdAndUserId(groupId, userId)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "그룹 멤버만 볼 수 있어요"));
 	}
 
+	/**
+	 * Join 화면 미리보기. memberCount 는 대기 멤버까지 포함한 전체, members 는 이번 기간 활동 멤버만.
+	 * joinsFrom 은 지금 참여하면 집계가 시작되는 날 = 현재 기간의 종료일
+	 */
 	public InvitePreview preview(Group g, Long me) {
 		GroupCard card = card(g, me);
 		boolean already = members.findByGroupIdAndUserId(g.getId(), me).isPresent();
