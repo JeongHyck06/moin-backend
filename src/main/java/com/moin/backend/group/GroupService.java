@@ -90,6 +90,12 @@ public class GroupService {
 				members.findByGroupId(g.getId()).size(), card.streak(), card.members(), already, joinsFrom);
 	}
 
+	/** 멤버 목록의 사용자 정보를 한 번의 IN 쿼리로 */
+	public Map<Long, User> usersOf(List<GroupMember> members) {
+		return users.findAllById(members.stream().map(GroupMember::getUserId).toList())
+				.stream().collect(toMap(User::getId, identity()));
+	}
+
 	public List<GroupCard> home(Long me) {
 		List<Long> ids = members.findByUserId(me).stream().map(GroupMember::getGroupId).toList();
 		return groups.findAllById(ids).stream()
@@ -106,8 +112,7 @@ public class GroupService {
 		LocalDate start = periodService.currentPeriodStart(g);
 		List<GroupMember> active = periodService.activeMembers(g, start);
 		Map<Long, List<CheckIn>> byUser = periodService.checkInsByUser(g, start);
-		Map<Long, User> userById = users.findAllById(active.stream().map(GroupMember::getUserId).toList())
-				.stream().collect(toMap(User::getId, identity()));
+		Map<Long, User> userById = usersOf(active);
 
 		List<MemberStatus> statuses = active.stream().map(m -> {
 			User u = userById.get(m.getUserId());
