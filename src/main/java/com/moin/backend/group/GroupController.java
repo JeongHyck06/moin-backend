@@ -63,6 +63,10 @@ public class GroupController {
 		return groupService.home(userId);
 	}
 
+	/**
+	 * 그룹 생성 + 방장 등록. WEEKLY 면 weeklyTarget 필수.
+	 * firstPeriodStart 는 frequency·resetTime 을 먼저 세팅한 뒤 계산해야 맞다 — 순서 바꾸면 NPE
+	 */
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	@Transactional
@@ -118,6 +122,7 @@ public class GroupController {
 		return groupService.detail(g, m);
 	}
 
+	/** 6자 랜덤. 32^6 ≈ 10억이라 충돌 재시도 루프는 거의 안 돈다 */
 	private String newInviteCode() {
 		String code;
 		do {

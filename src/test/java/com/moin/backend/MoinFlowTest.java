@@ -32,6 +32,7 @@ import com.jayway.jsonpath.JsonPath;
 @Import(MoinFlowTest.TestClock.class)
 class MoinFlowTest {
 
+	/** now 를 바꾸면 그 이후 요청은 그 시각에 일어난 것으로 처리된다 */
 	static class MutableClock extends Clock {
 		Instant now;
 		MutableClock(Instant now) { this.now = now; }
@@ -40,6 +41,7 @@ class MoinFlowTest {
 		@Override public Instant instant() { return now; }
 	}
 
+	/** @Primary 로 BackendApplication.clock() 을 덮는다 */
 	@TestConfiguration
 	static class TestClock {
 		@Bean @Primary

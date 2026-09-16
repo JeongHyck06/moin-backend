@@ -98,6 +98,10 @@ public class GroupService {
 				.toList();
 	}
 
+	/**
+	 * 홈 카드 1장. me 가 활동 멤버가 아니면(대기 멤버·비멤버) 재촉 대상이 아니라서 NEEDS_ME/CRISIS 가 되지 않는다.
+	 * CRISIS 는 마감까지 crisisHours 이내이고 내가 미완료일 때만
+	 */
 	public GroupCard card(Group g, Long me) {
 		LocalDate start = periodService.currentPeriodStart(g);
 		List<GroupMember> active = periodService.activeMembers(g, start);
@@ -131,6 +135,10 @@ public class GroupService {
 				myDone, mine == null ? 0 : mine.doneCount(), joinsNext, start, deadline, statuses);
 	}
 
+	/**
+	 * 그룹 상세. threshold = 이 인원만 인증하면 PASS ("3명이면 완료").
+	 * monthClosed/Completed 는 이번 달과 겹치는 마감 기간 기준 (§4 통계 정의)
+	 */
 	public GroupDetail detail(Group g, GroupMember membership) {
 		GroupCard card = card(g, membership.getUserId());
 		LocalDate monthStart = periodService.today(g).withDayOfMonth(1);

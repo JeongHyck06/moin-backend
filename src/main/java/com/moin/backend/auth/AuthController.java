@@ -24,6 +24,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * 카카오 access token 을 서버가 직접 검증하고 우리 세션 토큰(32바이트 랜덤, DB 조회)을 준다.
+ * JWT·Spring Security 없이 인터셉터 하나로 충분해서 안 넣었다
+ */
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
@@ -45,6 +49,7 @@ public class AuthController {
 	public record KakaoLogin(@NotBlank String accessToken) {}
 	public record DevLogin(@NotBlank @Size(max = 20) String nickname) {}
 	public record LoginResponse(String token, Long userId, String nickname, String avatarUrl) {}
+	/** 카카오 /v2/user/me 응답 중 쓰는 것만. properties 는 동의 항목에 따라 비어 올 수 있다 */
 	record KakaoUser(long id, Map<String, Object> properties) {}
 
 	/** 앱이 카카오 SDK로 받은 access token을 서버에서 검증하고 세션 토큰을 발급 */
@@ -69,6 +74,7 @@ public class AuthController {
 		return login("dev:" + body.nickname(), body.nickname(), null);
 	}
 
+	/** 같은 external_id 면 기존 사용자에 세션만 추가. 닉네임은 로그인마다 최신값으로 덮어쓴다 */
 	private LoginResponse login(String externalId, String nickname, String avatarUrl) {
 		User user = users.findByExternalId(externalId).orElseGet(() -> new User(externalId, nickname, avatarUrl));
 		user.setNickname(nickname);

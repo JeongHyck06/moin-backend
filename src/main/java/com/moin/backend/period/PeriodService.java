@@ -68,6 +68,7 @@ public class PeriodService {
 		return periodEnd(g, start).atTime(g.getResetTime()).atZone(zone).toInstant();
 	}
 
+	/** 지금 열려 있는 기간의 시작일. 카드·상세·인증 저장이 전부 이 값을 기준으로 본다 */
 	public LocalDate currentPeriodStart(Group g) {
 		return periodStart(g, today(g));
 	}

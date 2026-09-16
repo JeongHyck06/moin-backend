@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/** 로그인 1회 = 1행. 만료만 있고 갱신은 없다. 만료되면 카카오 로그인부터 다시 */
 @Entity
 @Table(name = "auth_sessions")
 @Getter

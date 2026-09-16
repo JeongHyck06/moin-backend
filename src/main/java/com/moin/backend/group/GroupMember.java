@@ -13,6 +13,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+/** 그룹 소속 1건. 방장도 여기 한 행 있다. (group_id, user_id) 유니크 */
 @Entity
 @Table(name = "group_members", uniqueConstraints = @UniqueConstraint(columnNames = { "group_id", "user_id" }))
 @Getter

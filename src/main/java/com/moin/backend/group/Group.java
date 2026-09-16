@@ -15,6 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+/** 인증 그룹. 규칙 컬럼(frequency, resetTime, allowedAbsences, streakFreeze)의 의미는 BACKEND_DESIGN.md §2 */
 @Entity
 @Table(name = "groups")
 @Getter
