@@ -1,13 +1,16 @@
 package com.moin.backend;
 
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -21,13 +24,16 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.jayway.jsonpath.JsonPath;
+import com.moin.backend.period.PeriodService;
 
 /** API 통합 흐름 검증, 기준 시각 2026-09-16(수) 10:00 KST, 시간은 clock.now 로 이동 */
-@SpringBootTest(properties = { "moin.dev-login=true", "spring.datasource.url=jdbc:h2:mem:moin-test" })
+@SpringBootTest(properties = { "moin.dev-login=true", "spring.datasource.url=jdbc:h2:mem:moin-test",
+		"moin.upload-dir=build/test-uploads", "moin.close-interval-ms=3600000" }) // 스케줄러가 테스트 중 끼어들지 않게
 @AutoConfigureMockMvc
 @Import(MoinFlowTest.TestClock.class)
 class MoinFlowTest {
@@ -50,9 +56,10 @@ class MoinFlowTest {
 
 	@Autowired MockMvc mvc;
 	@Autowired MutableClock clock;
+	@Autowired PeriodService periodService;
 
 	@Test
-	void 로그인_그룹생성_홈_프로필_초대_참여_이름변경() throws Exception {
+	void 로그인_그룹생성_홈_초대_참여_인증_마감_스트릭() throws Exception {
 		String owner = login("정혁");
 
 		// --- 인증 ---
@@ -140,6 +147,81 @@ class MoinFlowTest {
 				.andExpect(status().isBadRequest()); // 21자
 		mvc.perform(json(patch("/groups/9999"), owner).content("{\"name\":\"x\"}"))
 				.andExpect(status().isNotFound());
+
+		// --- 인증 업로드 ---
+		String checkInUrl = "/groups/" + groupId + "/check-ins";
+		MockMultipartFile video = new MockMultipartFile("video", "a.mp4", "video/mp4", new byte[] { 1, 2, 3 });
+		MockMultipartFile text = new MockMultipartFile("video", "a.txt", "text/plain", new byte[] { 1 });
+		mvc.perform(multipart(checkInUrl).file(video).header("Authorization", "Bearer " + friend))
+				.andExpect(status().isConflict()); // 다음 기간부터
+		mvc.perform(multipart(checkInUrl).file(text).header("Authorization", "Bearer " + owner))
+				.andExpect(status().isUnsupportedMediaType());
+		String checkedIn = mvc.perform(multipart(checkInUrl).file(video).header("Authorization", "Bearer " + owner))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.logicalDate").value("2026-09-16"))
+				.andExpect(jsonPath("$.allComplete").value(true)) // 활동 멤버가 나 혼자
+				.andExpect(jsonPath("$.videoUrl", startsWith("/videos/")))
+				.andExpect(jsonPath("$.group.state").value("COMPLETE"))
+				.andExpect(jsonPath("$.group.myDone").value(true))
+				.andReturn().getResponse().getContentAsString();
+		String videoUrl = JsonPath.read(checkedIn, "$.videoUrl");
+		mvc.perform(get(videoUrl)).andExpect(status().isOk()); // 영상은 토큰 없이 서빙
+		mvc.perform(multipart(checkInUrl).file(video).header("Authorization", "Bearer " + owner))
+				.andExpect(status().isConflict()); // 오늘 이미 인증
+
+		// --- 상세 ---
+		mvc.perform(get("/groups/" + groupId).header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.card.completedCount").value(1))
+				.andExpect(jsonPath("$.card.members[0].videoUrl").value(videoUrl))
+				.andExpect(jsonPath("$.periodVideoCount").value(1))
+				.andExpect(jsonPath("$.streak.current").value(0)); // 아직 마감 전
+		mvc.perform(get("/groups/" + groupId).header("Authorization", "Bearer " + login("외부인")))
+				.andExpect(status().isForbidden());
+		mvc.perform(get("/groups/9999").header("Authorization", "Bearer " + owner))
+				.andExpect(status().isNotFound());
+		mvc.perform(get("/me").header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.totalCheckIns").value(1));
+
+		// --- 하루 지나 마감, 나 혼자 인증했으니 PERFECT, 스트릭 1, 친구는 이제 활동 멤버 ---
+		clock.now = clock.now.plus(Duration.ofDays(1)); // 9/17 10:00 KST
+		periodService.closeAllDuePeriods();
+		mvc.perform(get("/groups/" + groupId).header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.streak.current").value(1))
+				.andExpect(jsonPath("$.streak.perfect").value(1))
+				.andExpect(jsonPath("$.streak.longest").value(1))
+				.andExpect(jsonPath("$.card.activeCount").value(2))
+				.andExpect(jsonPath("$.card.completedCount").value(0))
+				.andExpect(jsonPath("$.card.state").value("NEEDS_ME"))
+				.andExpect(jsonPath("$.card.periodStart").value("2026-09-17"))
+				.andExpect(jsonPath("$.threshold").value(1))
+				.andExpect(jsonPath("$.monthClosedPeriods").value(1))
+				.andExpect(jsonPath("$.monthCompletedPeriods").value(1));
+		mvc.perform(get("/groups").header("Authorization", "Bearer " + friend))
+				.andExpect(jsonPath("$[0].joinsNextPeriod").value(false))
+				.andExpect(jsonPath("$[0].state").value("NEEDS_ME"));
+		mvc.perform(multipart(checkInUrl).file(video).header("Authorization", "Bearer " + friend))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.allComplete").value(false)) // 방장이 아직
+				.andExpect(jsonPath("$.group.state").value("WAITING_OTHERS"));
+
+		// --- 하루 더, 방장 미인증 1명 <= 결석 허용 1 이라 PASS, 스트릭 2 ---
+		clock.now = clock.now.plus(Duration.ofDays(1)); // 9/18
+		periodService.closeAllDuePeriods();
+		periodService.closeAllDuePeriods(); // 중복 실행해도 기간이 늘지 않음
+		mvc.perform(get("/groups/" + groupId).header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.streak.current").value(2))
+				.andExpect(jsonPath("$.streak.perfect").value(1))
+				.andExpect(jsonPath("$.streak.pass").value(1))
+				.andExpect(jsonPath("$.monthClosedPeriods").value(2));
+
+		// --- 사흘 방치, 2명 미인증 > 결석 허용 1 이라 FAILED, 스트릭 0, 최장 2 ---
+		clock.now = clock.now.plus(Duration.ofDays(3)); // 9/21, 빠진 기간 3개를 한 번에 채움
+		periodService.closeAllDuePeriods();
+		mvc.perform(get("/groups/" + groupId).header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.streak.current").value(0))
+				.andExpect(jsonPath("$.streak.longest").value(2))
+				.andExpect(jsonPath("$.monthClosedPeriods").value(5))
+				.andExpect(jsonPath("$.monthCompletedPeriods").value(2));
 	}
 
 	private String login(String nickname) throws Exception {
