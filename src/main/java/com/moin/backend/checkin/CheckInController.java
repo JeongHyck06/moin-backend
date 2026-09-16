@@ -31,6 +31,8 @@ import com.moin.backend.group.Group;
 import com.moin.backend.group.GroupMember;
 import com.moin.backend.group.GroupService;
 import com.moin.backend.group.GroupService.GroupCard;
+import com.moin.backend.group.GroupService.MemberStatus;
+import com.moin.backend.notification.PushService;
 import com.moin.backend.period.Period;
 import com.moin.backend.period.PeriodRepository;
 import com.moin.backend.period.PeriodService;
@@ -48,6 +50,7 @@ public class CheckInController {
 	private final GroupService groupService;
 	private final PeriodService periodService;
 	private final PeriodRepository periods;
+	private final PushService push;
 
 	/** Complete 화면용, allComplete 면 "마지막 1명이었어요, 전원 완료!", streak 은 마감 전 값이라 화면에서 +1 */
 	public record CheckInResult(Long id, String videoUrl, LocalDate logicalDate, boolean allComplete,
@@ -74,8 +77,20 @@ public class CheckInController {
 		}
 		CheckIn saved = checkIns.save(new CheckIn(groupId, userId, today, storage.save(video), periodService.now()));
 		GroupCard card = groupService.card(g, userId);
-		return new CheckInResult(saved.getId(), saved.getVideoUrl(), today,
-				card.state() == GroupService.State.COMPLETE, periodService.streak(g), card);
+		boolean allComplete = card.state() == GroupService.State.COMPLETE;
+		notifyOthers(g, card, userId, allComplete);
+		return new CheckInResult(saved.getId(), saved.getVideoUrl(), today, allComplete, periodService.streak(g), card);
+	}
+
+	/** 전원 완료면 축하를, 아니면 "누가 인증했어요" 를 나 빼고 활동 멤버에게 */
+	private void notifyOthers(Group g, GroupCard card, Long actor, boolean allComplete) {
+		List<Long> others = card.members().stream().map(MemberStatus::userId).filter(id -> !id.equals(actor)).toList();
+		String me = card.members().stream().filter(m -> m.userId().equals(actor)).map(MemberStatus::nickname).findFirst().orElse("멤버");
+		if (allComplete) {
+			push.send(g, PushService.Kind.ALL_COMPLETE, others, g.getName(), "오늘 전원 완료, 스트릭 " + (card.streak() + 1) + "일");
+		} else {
+			push.send(g, PushService.Kind.SOCIAL, others, g.getName(), me + "님이 인증했어요");
+		}
 	}
 
 	/** Feed 화면 한 페이지, 영상 있는 멤버가 앞에 */
