@@ -68,6 +68,12 @@ public class Group {
 	@Column(nullable = false)
 	private Instant createdAt;
 
+	/** 리마인더를 보낸 논리 날짜, 하루 1번만 보내기 위한 기록 */
+	private LocalDate reminderSentOn;
+
+	/** 막차(위기) 알림을 보낸 기간 시작일, 기간당 1번 */
+	private LocalDate lastCallSentOn;
+
 	/** 기간 안에서 멤버 한 명이 채워야 하는 인증 횟수 */
 	public int target() {
 		return frequency == Frequency.DAILY ? 1 : weeklyTarget;
