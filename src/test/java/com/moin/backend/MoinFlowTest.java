@@ -1,6 +1,7 @@
 package com.moin.backend;
 
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -15,6 +16,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,7 +34,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.jayway.jsonpath.JsonPath;
+import com.moin.backend.notification.NotificationScheduler;
+import com.moin.backend.notification.PushSender;
 import com.moin.backend.period.PeriodService;
+import com.moin.backend.user.PushDeviceRepository;
 
 /** API 통합 흐름 검증, 기준 시각 2026-09-16(수) 10:00 KST, 시간은 clock.now 로 이동 */
 @SpringBootTest(properties = { "moin.dev-login=true", "spring.datasource.url=jdbc:h2:mem:moin-test",
@@ -48,16 +55,30 @@ class MoinFlowTest {
 		@Override public Instant instant() { return now; }
 	}
 
-	/** @Primary 로 BackendApplication.clock() 을 대체 */
+	/** FCM 대신 보낸 내용을 쌓아 두는 발송기, 토큰이 없으면 실제 발송기처럼 아무것도 안 함 */
+	record Sent(List<String> tokens, String title, String body, Map<String, String> data) {}
+	static class RecordingSender extends PushSender {
+		final List<Sent> sent = new ArrayList<>();
+		RecordingSender(PushDeviceRepository devices) throws java.io.IOException { super(devices, ""); }
+		@Override public void send(List<String> tokens, String title, String body, Map<String, String> data) {
+			if (!tokens.isEmpty()) sent.add(new Sent(tokens, title, body, data));
+		}
+	}
+
+	/** @Primary 로 BackendApplication.clock() 과 PushSender 를 대체 */
 	@TestConfiguration
 	static class TestClock {
 		@Bean @Primary
 		MutableClock testClock() { return new MutableClock(Instant.parse("2026-09-16T01:00:00Z")); }
+		@Bean @Primary
+		RecordingSender recordingSender(PushDeviceRepository devices) throws java.io.IOException { return new RecordingSender(devices); }
 	}
 
 	@Autowired MockMvc mvc;
 	@Autowired MutableClock clock;
 	@Autowired PeriodService periodService;
+	@Autowired NotificationScheduler notificationScheduler;
+	@Autowired RecordingSender sender;
 
 	@Test
 	void 로그인_그룹생성_홈_초대_참여_인증_마감_스트릭() throws Exception {
@@ -314,6 +335,42 @@ class MoinFlowTest {
 				.andExpect(status().isNoContent());
 		mvc.perform(json(post("/me/push-token"), owner).content("{\"token\":\"fcm-2\",\"platform\":\"web\"}"))
 				.andExpect(status().isBadRequest());
+
+		// --- 푸시: 방장은 리마인더 OFF + 그룹 음소거, 친구(fcm-1)만 받는다 ---
+		mvc.perform(json(post("/me/push-token"), owner).content("{\"token\":\"fcm-owner\",\"platform\":\"ios\"}"))
+				.andExpect(status().isNoContent());
+		List<Sent> sent = sender.sent;
+		notificationScheduler.tick(); // 9/21 10:00 KST, 리마인더 08:00 지남, 둘 다 미인증
+		assertEquals(1, sent.size());
+		assertEquals(List.of("fcm-1"), sent.get(0).tokens());
+		assertEquals("REMINDER", sent.get(0).data().get("kind"));
+		assertEquals(String.valueOf(groupId), sent.get(0).data().get("groupId"));
+		notificationScheduler.tick();
+		assertEquals(1, sent.size()); // 같은 날 두 번 안 보냄
+
+		clock.now = Instant.parse("2026-09-21T17:30:00Z"); // 9/22 02:30 KST, 논리 날짜는 아직 9/21, 마감 04:00 까지 2시간 안
+		notificationScheduler.tick();
+		assertEquals(2, sent.size());
+		assertEquals("CRISIS", sent.get(1).data().get("kind")); // 2명 미인증 > 결석 허용 1
+		assertEquals(List.of("fcm-1"), sent.get(1).tokens());
+		notificationScheduler.tick();
+		assertEquals(2, sent.size()); // 기간당 1번
+
+		mvc.perform(multipart(checkInUrl).file(video).header("Authorization", "Bearer " + friend))
+				.andExpect(status().isCreated());
+		assertEquals(2, sent.size()); // SOCIAL 대상은 방장뿐인데 음소거라 발송 없음
+		mvc.perform(multipart(checkInUrl).file(video).header("Authorization", "Bearer " + owner))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.allComplete").value(true));
+		assertEquals(3, sent.size());
+		assertEquals("ALL_COMPLETE", sent.get(2).data().get("kind"));
+		assertEquals(List.of("fcm-1"), sent.get(2).tokens());
+
+		// --- 앱 버전: 인증 없이 ---
+		mvc.perform(get("/app/version"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.minVersion").value("1.0.0"))
+				.andExpect(jsonPath("$.latestVersion").value("1.0.0"));
 	}
 
 	private String login(String nickname) throws Exception {
