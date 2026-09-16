@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -93,7 +94,8 @@ class MoinFlowTest {
 		mvc.perform(json(post("/groups"), owner).content("{\"name\":\"요가\",\"frequency\":\"WEEKLY\"}"))
 				.andExpect(status().isBadRequest()); // weeklyTarget 없음
 		mvc.perform(json(post("/groups"), owner).content("{\"name\":\"\",\"frequency\":\"DAILY\"}"))
-				.andExpect(status().isBadRequest()); // 이름 비어 있음
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("그룹 이름을 입력해주세요")); // 검증 문구가 message 로
 
 		mvc.perform(get("/groups").header("Authorization", "Bearer " + owner))
 				.andExpect(jsonPath("$.length()").value(1))
@@ -129,7 +131,8 @@ class MoinFlowTest {
 				.andExpect(jsonPath("$.card.state").value("WAITING_OTHERS"))
 				.andExpect(jsonPath("$.card.activeCount").value(1)); // 이번 기간엔 집계 안 됨
 		mvc.perform(post("/groups/invite/" + code + "/join").header("Authorization", "Bearer " + friend))
-				.andExpect(status().isConflict());
+				.andExpect(status().isConflict())
+				.andExpect(status().reason("이미 참여한 그룹이에요"));
 		mvc.perform(get("/groups/invite/" + code).header("Authorization", "Bearer " + friend))
 				.andExpect(jsonPath("$.memberCount").value(2))
 				.andExpect(jsonPath("$.alreadyMember").value(true));
@@ -167,7 +170,8 @@ class MoinFlowTest {
 		String videoUrl = JsonPath.read(checkedIn, "$.videoUrl");
 		mvc.perform(get(videoUrl)).andExpect(status().isOk()); // 영상은 토큰 없이 서빙
 		mvc.perform(multipart(checkInUrl).file(video).header("Authorization", "Bearer " + owner))
-				.andExpect(status().isConflict()); // 오늘 이미 인증
+				.andExpect(status().isConflict())
+				.andExpect(status().reason("오늘은 이미 인증했어요"));
 
 		// --- 상세 ---
 		mvc.perform(get("/groups/" + groupId).header("Authorization", "Bearer " + owner))
@@ -267,6 +271,48 @@ class MoinFlowTest {
 				.andExpect(jsonPath("$.totalCheckIns").value(0))
 				.andExpect(jsonPath("$.perfectRate").value(0));
 		mvc.perform(get(calendarUrl).param("month", "9월").header("Authorization", "Bearer " + owner))
+				.andExpect(status().isBadRequest());
+
+		// --- 마이페이지 내 그룹: 방장은 마감 5개 중 1개 완료(20%), 친구는 9/17 이후 4개 중 1개(25%) ---
+		mvc.perform(get("/me/groups").header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].name").value("저녁 러닝"))
+				.andExpect(jsonPath("$[0].streak").value(0))
+				.andExpect(jsonPath("$[0].achievementRate").value(20));
+		mvc.perform(get("/me/groups").header("Authorization", "Bearer " + friend))
+				.andExpect(jsonPath("$[0].achievementRate").value(25));
+
+		// --- 알림 설정: 기본 전부 켬, 그룹 음소거는 멤버만 ---
+		mvc.perform(get("/me/notification-settings").header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.kinds.reminder").value(true))
+				.andExpect(jsonPath("$.kinds.allComplete").value(true))
+				.andExpect(jsonPath("$.groups[0].id").value(groupId))
+				.andExpect(jsonPath("$.groups[0].muted").value(false));
+		mvc.perform(json(put("/groups/" + groupId + "/mute"), login("외부인")).content("{\"muted\":true}"))
+				.andExpect(status().isForbidden());
+		mvc.perform(json(put("/groups/" + groupId + "/mute"), owner).content("{\"muted\":true}"))
+				.andExpect(status().isNoContent());
+		mvc.perform(get("/me/notification-settings").header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.groups[0].muted").value(true));
+		mvc.perform(get("/groups/" + groupId).header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.muted").value(true));
+		mvc.perform(get("/me/notification-settings").header("Authorization", "Bearer " + friend))
+				.andExpect(jsonPath("$.groups[0].muted").value(false)); // 내 음소거는 나만
+		mvc.perform(json(put("/me/notification-settings"), owner)
+						.content("{\"reminder\":false,\"social\":true,\"crisis\":true,\"lastCall\":false,\"allComplete\":true}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.kinds.reminder").value(false))
+				.andExpect(jsonPath("$.kinds.lastCall").value(false))
+				.andExpect(jsonPath("$.kinds.social").value(true));
+
+		// --- 푸시 토큰: 재등록 가능, 같은 토큰을 다른 계정이 등록하면 주인이 바뀜 ---
+		mvc.perform(json(post("/me/push-token"), owner).content("{\"token\":\"fcm-1\",\"platform\":\"ios\"}"))
+				.andExpect(status().isNoContent());
+		mvc.perform(json(post("/me/push-token"), owner).content("{\"token\":\"fcm-1\",\"platform\":\"ios\"}"))
+				.andExpect(status().isNoContent());
+		mvc.perform(json(post("/me/push-token"), friend).content("{\"token\":\"fcm-1\",\"platform\":\"android\"}"))
+				.andExpect(status().isNoContent());
+		mvc.perform(json(post("/me/push-token"), owner).content("{\"token\":\"fcm-2\",\"platform\":\"web\"}"))
 				.andExpect(status().isBadRequest());
 	}
 
