@@ -53,7 +53,7 @@ public class GroupService {
 			LocalDate periodStart, Instant deadline, List<MemberStatus> members) {}
 
 	public record GroupDetail(GroupCard card, String inviteCode, @JsonFormat(pattern = "HH:mm") LocalTime reminderTime,
-			boolean streakFreeze, boolean muted,
+			boolean streakFreeze, boolean muted, boolean isOwner,
 			PeriodService.Streak streak, int threshold, int periodVideoCount,
 			int monthCompletedPeriods, int monthClosedPeriods) {}
 
@@ -142,6 +142,7 @@ public class GroupService {
 
 	/**
 	 * 그룹 상세, threshold = 이 인원만 인증하면 PASS ("3명이면 완료")
+	 * isOwner 는 PATCH /groups/{id} 의 방장 판정과 같은 기준, 앱은 이걸로 이름 변경 Row 노출 여부를 정함
 	 * monthClosed/Completed 는 이번 달과 겹치는 마감 기간 기준 (§4 통계 정의)
 	 */
 	public GroupDetail detail(Group g, GroupMember membership) {
@@ -151,6 +152,7 @@ public class GroupService {
 		int completedPeriods = (int) month.stream().filter(p -> p.getStatus() != Period.Status.FAILED).count();
 		int videos = card.members().stream().mapToInt(MemberStatus::doneCount).sum();
 		return new GroupDetail(card, g.getInviteCode(), g.getReminderTime(), g.isStreakFreeze(), membership.isMuted(),
+				g.getOwnerId().equals(membership.getUserId()),
 				periodService.streak(g), card.activeCount() - g.getAllowedAbsences(), videos, completedPeriods, month.size());
 	}
 }
