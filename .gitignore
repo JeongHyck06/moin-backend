@@ -39,3 +39,4 @@ out/
 ### Moin ###
 data/
 uploads/
+firebase-service-account.json
