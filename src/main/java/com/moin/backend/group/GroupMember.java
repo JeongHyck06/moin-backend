@@ -15,7 +15,7 @@ import lombok.Setter;
 
 /** 그룹 소속 1건, 방장도 한 행 존재, (group_id, user_id) 유니크 */
 @Entity
-@Table(name = "group_members", uniqueConstraints = @UniqueConstraint(columnNames = { "group_id", "user_id" }))
+@Table(name = "group_members", uniqueConstraints = @UniqueConstraint(columnNames = { "groupId", "userId" }))
 @Getter
 @Setter
 @NoArgsConstructor

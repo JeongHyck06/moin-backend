@@ -15,7 +15,7 @@ import lombok.NoArgsConstructor;
 
 /** 마감된 기간 하나의 결과, 스트릭 · 달력 · 달성률은 전부 여기서 파생 */
 @Entity
-@Table(name = "periods", uniqueConstraints = @UniqueConstraint(columnNames = { "group_id", "period_start" }))
+@Table(name = "periods", uniqueConstraints = @UniqueConstraint(columnNames = { "groupId", "periodStart" }))
 @Getter
 @NoArgsConstructor
 public class Period {

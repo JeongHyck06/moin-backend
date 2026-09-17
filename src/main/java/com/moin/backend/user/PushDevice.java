@@ -19,8 +19,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class PushDevice {
 
+	// utf8mb4 PK 는 3072바이트가 한계라 4096자를 못 쓴다, FCM 토큰은 200자 안팎이라 512자로 충분
 	@Id
-	@Column(length = 4096)
+	@Column(length = 512)
 	private String token;
 
 	@Column(nullable = false)
