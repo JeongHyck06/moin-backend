@@ -40,3 +40,6 @@ out/
 data/
 uploads/
 firebase-service-account.json
+
+# 로컬 프로파일은 PC 마다 다르고 저장소에 올리지 않음, .example 을 복사해서 만든다
+src/main/resources/application-local.properties

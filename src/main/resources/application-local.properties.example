@@ -1,3 +1,4 @@
+# 이 파일을 application-local.properties 로 복사해서 쓴다, 실제 파일은 버전 관리에서 제외
 # 로컬 개발 프로파일, 프로파일 지정 없는 기본값
 # Swagger 는 springdoc 기본값 그대로 열린 상태
 
