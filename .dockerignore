@@ -1,0 +1,4 @@
+**
+!deploy-artifact/
+!deploy-artifact/app.jar
+!Dockerfile

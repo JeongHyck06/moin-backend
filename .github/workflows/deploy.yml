@@ -1,0 +1,71 @@
+name: Deploy Moin backend
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: moin-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Test and build
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon clean test bootJar
+          mkdir -p deploy-artifact
+          python3 - <<'PY'
+          import pathlib, shutil, zipfile
+          jars = []
+          for p in pathlib.Path('build/libs').glob('*.jar'):
+              with zipfile.ZipFile(p) as z:
+                  if any(n.startswith('BOOT-INF/classes/') for n in z.namelist()): jars.append(p)
+          if len(jars) != 1: raise SystemExit(f'Expected one Spring Boot JAR: {jars}')
+          shutil.copyfile(jars[0], 'deploy-artifact/app.jar')
+          PY
+      - name: Build deployment image
+        id: release
+        run: |
+          release=$(printf '%s:%s:%s' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" | sha1sum | cut -d ' ' -f 1)
+          docker build --pull -t "moin-backend:$release" .
+          docker save "moin-backend:$release" | gzip > deploy-artifact/image.tar.gz
+          echo "id=$release" >> "$GITHUB_OUTPUT"
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/moin-deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/moin-deploy ~/.ssh/known_hosts
+      - name: Deploy and verify
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '2222' }}
+          RELEASE_ID: ${{ steps.release.outputs.id }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]]
+          [[ "$RELEASE_ID" =~ ^[a-f0-9]{40}$ ]]
+          checksum=$(sha256sum deploy-artifact/image.tar.gz | cut -d ' ' -f 1)
+          opts=(-i "$HOME/.ssh/moin-deploy" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=6)
+          scp "${opts[@]}" -P "$DEPLOY_PORT" deploy-artifact/image.tar.gz "jack@$DEPLOY_HOST:/home/jack/apps/moin/incoming/$RELEASE_ID.tar.gz"
+          ssh "${opts[@]}" -p "$DEPLOY_PORT" "jack@$DEPLOY_HOST" "/home/jack/apps/moin/deploy.sh $RELEASE_ID $checksum"
+          curl --fail --silent --show-error --max-time 20 "http://$DEPLOY_HOST/app/version"
+      - name: Remove runner credentials
+        if: always()
+        run: rm -f ~/.ssh/moin-deploy ~/.ssh/known_hosts

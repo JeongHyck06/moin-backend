@@ -31,6 +31,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.jayway.jsonpath.JsonPath;
@@ -43,6 +44,7 @@ import com.moin.backend.user.PushDeviceRepository;
 @SpringBootTest(properties = { "moin.dev-login=true", "spring.datasource.url=jdbc:h2:mem:moin-test",
 		"moin.upload-dir=build/test-uploads", "moin.close-interval-ms=3600000" }) // 스케줄러가 테스트 중 끼어들지 않게
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
 @Import(MoinFlowTest.TestClock.class)
 class MoinFlowTest {
 
@@ -79,6 +81,15 @@ class MoinFlowTest {
 	@Autowired PeriodService periodService;
 	@Autowired NotificationScheduler notificationScheduler;
 	@Autowired RecordingSender sender;
+
+	@Test
+	void 배포_상태확인은_인증없이_가능하고_업무API는_보호된다() throws Exception {
+		mvc.perform(get("/actuator/health"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("UP"))
+				.andExpect(jsonPath("$.components").doesNotExist());
+		mvc.perform(get("/groups")).andExpect(status().isUnauthorized());
+	}
 
 	@Test
 	void 로그인_그룹생성_홈_초대_참여_인증_마감_스트릭() throws Exception {
