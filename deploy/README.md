@@ -34,6 +34,15 @@ Repository Secrets: `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`.
 
 ## 선택 설정
 
+- Swagger: 기본 비활성입니다. 서버 `.env`에 `SWAGGER_ENABLED=true`를 설정하고 아래 명령으로 backend를 재생성하면 `/swagger-ui/index.html`, `/v3/api-docs`를 인증 없이 열 수 있습니다. 업무 API의 Bearer 인증과 개발 로그인 차단은 유지됩니다. 다시 닫으려면 `false`로 변경한 뒤 재생성합니다.
+
+  ```bash
+  cd /home/jack/apps/moin
+  docker compose --env-file .env --env-file release.env up -d --no-deps --wait backend
+  ```
+
+  환경변수 변경은 `restart`만으로 반영되지 않습니다. Swagger 지원 이미지와 최신 `compose.yaml`이 배포되어 있어야 합니다.
+
 - FCM: `secrets/firebase-service-account.json`을 컨테이너 사용자 10001이 읽을 수 있게 저장하고 `.env`의 `FCM_CREDENTIALS=/run/secrets/firebase-service-account.json`을 설정한 뒤 backend를 재생성합니다. 키가 없으면 실제 푸시는 발송되지 않습니다.
 - 앱 버전·스토어 주소: `.env`의 `APP_MIN_VERSION`, `APP_LATEST_VERSION`, `IOS_STORE_URL`, `ANDROID_STORE_URL`.
 - 도메인을 연결한 뒤 HTTPS를 설정하세요. 현재 공인 IP HTTP 접속은 가능하지만 로그인 토큰과 영상 전송 보호를 위해 실제 사용자 서비스에는 HTTPS가 필요합니다.
