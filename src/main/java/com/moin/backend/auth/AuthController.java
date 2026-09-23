@@ -38,6 +38,7 @@ public class AuthController {
 	private final UserRepository users;
 	private final SessionRepository sessions;
 	private final Clock clock;
+	private final IdentityTokenVerifier identityTokens;
 	private final RestClient kakao = RestClient.create("https://kapi.kakao.com");
 
 	@Value("${moin.dev-login}")
@@ -49,6 +50,27 @@ public class AuthController {
 	public record KakaoLogin(@NotBlank(message = "카카오 토큰이 필요해요") String accessToken) {}
 	public record DevLogin(@NotBlank(message = "닉네임을 입력해주세요") @Size(max = 20, message = "닉네임은 20자까지예요") String nickname) {}
 	public record LoginResponse(String token, Long userId, String nickname, String avatarUrl) {}
+	public record GoogleLogin(@NotBlank @Size(max = 16384) String idToken) {}
+	public record AppleLogin(@NotBlank @Size(max = 16384) String identityToken,
+			@NotBlank @Size(max = 128) String nonce, @Size(max = 100) String fullName) {}
+	public record AppleChallenge(String nonce) {}
+
+	@PostMapping("/google")
+	public LoginResponse google(@Valid @RequestBody GoogleLogin body) {
+		var identity = identityTokens.google(body.idToken());
+		return login("google:" + identity.getSubject(), identity.getClaimAsString("name"), identity.getClaimAsString("picture"));
+	}
+
+	@PostMapping("/apple/challenge")
+	public AppleChallenge appleChallenge() {
+		return new AppleChallenge(identityTokens.challenge());
+	}
+
+	@PostMapping("/apple")
+	public LoginResponse apple(@Valid @RequestBody AppleLogin body) {
+		var identity = identityTokens.apple(body.identityToken(), body.nonce());
+		return login("apple:" + identity.getSubject(), body.fullName(), null);
+	}
 	/** 카카오 /v2/user/me 응답 중 쓰는 필드만, properties 는 동의 항목에 따라 비어 올 수 있음 */
 	record KakaoUser(long id, Map<String, Object> properties) {}
 
@@ -74,10 +96,13 @@ public class AuthController {
 		return login("dev:" + body.nickname(), body.nickname(), null);
 	}
 
-	/** 같은 external_id 면 기존 사용자에 세션만 추가, 닉네임은 로그인마다 최신값으로 덮어씀 */
+	/** 제공자별 고유 ID로 계정 분리, Apple이 이름을 재전송하지 않아도 기존 프로필 유지 */
 	private LoginResponse login(String externalId, String nickname, String avatarUrl) {
-		User user = users.findByExternalId(externalId).orElseGet(() -> new User(externalId, nickname, avatarUrl));
-		user.setNickname(nickname);
+		String displayName = nickname == null || nickname.isBlank() ? null : nickname.strip();
+		if (displayName != null && displayName.length() > 20) displayName = displayName.substring(0, displayName.offsetByCodePoints(0, Math.min(20, displayName.codePointCount(0, displayName.length()))));
+		User user = users.findByExternalId(externalId).orElse(null);
+		if (user == null) user = new User(externalId, displayName == null ? "모인" : displayName, avatarUrl);
+		else if (displayName != null) user.setNickname(displayName);
 		if (avatarUrl != null) user.setAvatarUrl(avatarUrl);
 		users.save(user);
 
