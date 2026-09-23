@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,8 +17,12 @@ import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.moin.backend.checkin.CheckInRepository;
 import com.moin.backend.auth.SessionRepository;
@@ -48,6 +53,7 @@ public class MeController {
 	private final PeriodService periodService;
 	private final PushDeviceRepository devices;
 	private final SessionRepository sessions;
+	private final AvatarStorage avatars;
 
 	public record Logout(@Size(max = 512) String pushToken) {}
 
@@ -63,6 +69,22 @@ public class MeController {
 
 	/** 마이페이지 프로필, totalStreak = 내 그룹 현재 스트릭 합, totalCheckIns = 내 인증 전체 수 */
 	public record Profile(Long id, String nickname, String avatarUrl, int totalStreak, long totalCheckIns) {}
+
+	/** 본인 프로필만 변경, 사진 검증 실패 시 닉네임도 함께 유지 */
+	@PostMapping(value = "/profile", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@Transactional
+	public Profile updateProfile(@RequestAttribute("userId") Long userId,
+			@RequestParam("nickname") String nickname, @RequestPart(value = "avatar", required = false) MultipartFile avatar) {
+		String name = nickname.strip();
+		if (name.isBlank() || name.length() > 20) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "닉네임은 1~20자로 입력해주세요");
+		}
+		User user = users.findById(userId).orElseThrow();
+		if (avatar != null) user.setAvatarUrl(avatars.save(avatar));
+		user.setNickname(name);
+		users.save(user);
+		return me(userId);
+	}
 
 	@GetMapping
 	public Profile me(@RequestAttribute("userId") Long userId) {
