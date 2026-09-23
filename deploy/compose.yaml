@@ -32,6 +32,8 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS:-}
+      APPLE_CLIENT_IDS: ${APPLE_CLIENT_IDS:-com.moin}
       DB_URL: jdbc:mysql://db:3306/moin?useSSL=false&allowPublicKeyRetrieval=true&connectionTimeZone=Asia/Seoul
       DB_USER: moin
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
