@@ -96,14 +96,12 @@ public class AuthController {
 		return login("dev:" + body.nickname(), body.nickname(), null);
 	}
 
-	/** 제공자별 고유 ID로 계정 분리, Apple이 이름을 재전송하지 않아도 기존 프로필 유지 */
+	/** 제공자별 고유 ID로 계정 분리, 재로그인 시 사용자가 편집한 프로필 유지 */
 	private LoginResponse login(String externalId, String nickname, String avatarUrl) {
 		String displayName = nickname == null || nickname.isBlank() ? null : nickname.strip();
 		if (displayName != null && displayName.length() > 20) displayName = displayName.substring(0, displayName.offsetByCodePoints(0, Math.min(20, displayName.codePointCount(0, displayName.length()))));
 		User user = users.findByExternalId(externalId).orElse(null);
 		if (user == null) user = new User(externalId, displayName == null ? "모인" : displayName, avatarUrl);
-		else if (displayName != null) user.setNickname(displayName);
-		if (avatarUrl != null) user.setAvatarUrl(avatarUrl);
 		users.save(user);
 
 		byte[] bytes = new byte[32];

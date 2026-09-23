@@ -88,6 +88,48 @@ class MoinFlowTest {
 	@Autowired PendingMembershipMigration membershipMigration;
 
 	@Test
+	void 프로필_사진과_닉네임은_본인만_변경하고_재로그인에도_유지한다() throws Exception {
+		String owner = login("프로필 원래 이름");
+		String other = login("프로필 다른 사용자");
+		var bytes = new java.io.ByteArrayOutputStream();
+		javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(24, 16, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", bytes);
+		var photo = new MockMultipartFile("avatar", "photo.png", "image/png", bytes.toByteArray());
+		mvc.perform(multipart("/me/profile").file(photo).param("nickname", "미인증 변경"))
+				.andExpect(status().isUnauthorized());
+		String updated = mvc.perform(multipart("/me/profile").file(photo).param("nickname", "  새 닉네임  ").header("Authorization", "Bearer " + owner))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.nickname").value("새 닉네임"))
+				.andExpect(jsonPath("$.avatarUrl", startsWith("/avatars/")))
+				.andReturn().getResponse().getContentAsString();
+		String avatar = JsonPath.read(updated, "$.avatarUrl");
+		byte[] image = mvc.perform(get(avatar)).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+		var normalized = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(image));
+		assertEquals(512, normalized.getWidth());
+		assertEquals(512, normalized.getHeight());
+		mvc.perform(get("/me").header("Authorization", "Bearer " + other))
+				.andExpect(jsonPath("$.nickname").value("프로필 다른 사용자"))
+				.andExpect(jsonPath("$.avatarUrl").isEmpty());
+		mvc.perform(post("/auth/dev").contentType(MediaType.APPLICATION_JSON).content("{\"nickname\":\"프로필 원래 이름\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.nickname").value("새 닉네임"))
+				.andExpect(jsonPath("$.avatarUrl").value(avatar));
+		mvc.perform(multipart("/me/profile").param("nickname", " ").header("Authorization", "Bearer " + owner))
+				.andExpect(status().isBadRequest());
+		mvc.perform(multipart("/me/profile").param("nickname", "123456789012345678901").header("Authorization", "Bearer " + owner))
+				.andExpect(status().isBadRequest());
+		mvc.perform(multipart("/me/profile").file(new MockMultipartFile("avatar", "fake.jpg", "image/jpeg", new byte[] { 1, 2, 3 }))
+				.param("nickname", "저장되면 안 됨").header("Authorization", "Bearer " + owner))
+				.andExpect(status().isUnsupportedMediaType());
+		mvc.perform(get("/me").header("Authorization", "Bearer " + owner))
+				.andExpect(jsonPath("$.nickname").value("새 닉네임"))
+				.andExpect(jsonPath("$.avatarUrl").value(avatar));
+		mvc.perform(multipart("/me/profile").param("nickname", "닉네임만 변경").header("Authorization", "Bearer " + owner))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.nickname").value("닉네임만 변경"))
+				.andExpect(jsonPath("$.avatarUrl").value(avatar));
+	}
+
+	@Test
 	@org.springframework.transaction.annotation.Transactional
 	void 주중_참여와_기존_대기는_즉시_인증하고_지난_기간은_유지한다() throws Exception {
 		Instant previous = clock.now;
