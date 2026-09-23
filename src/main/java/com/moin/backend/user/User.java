@@ -13,7 +13,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/** 카카오 계정 1개 = 사용자 1명, 개발용 로그인은 external_id 접두어 dev: 로 구분 */
+/** 로그인 제공자와 고유 ID 조합으로 계정 구분, 이메일 기준 자동 병합 금지 */
 @Entity
 @Table(name = "users")
 @Getter
@@ -25,7 +25,7 @@ public class User {
 	@GeneratedValue
 	private Long id;
 
-	/** "kakao:{id}" 또는 "dev:{nickname}" */
+	/** kakao:, google:, apple: 또는 개발 전용 dev: 접두어 */
 	@Column(nullable = false, unique = true)
 	private String externalId;
 
