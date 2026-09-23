@@ -8,16 +8,19 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.moin.backend.checkin.CheckInRepository;
+import com.moin.backend.auth.SessionRepository;
 import com.moin.backend.group.Group;
 import com.moin.backend.group.GroupMember;
 import com.moin.backend.group.GroupMemberRepository;
@@ -29,6 +32,7 @@ import com.moin.backend.period.PeriodService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -43,6 +47,19 @@ public class MeController {
 	private final PeriodRepository periods;
 	private final PeriodService periodService;
 	private final PushDeviceRepository devices;
+	private final SessionRepository sessions;
+
+	public record Logout(@Size(max = 512) String pushToken) {}
+
+	/** 현재 세션과 이 계정 소유의 기기 토큰만 제거, 다른 기기 로그인은 유지 */
+	@PostMapping("/logout")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	@Transactional
+	public void logout(@RequestAttribute("userId") Long userId,
+			@RequestHeader("Authorization") String authorization, @Valid @RequestBody(required = false) Logout body) {
+		if (body != null && body.pushToken() != null) devices.deleteByTokenAndUserId(body.pushToken(), userId);
+		sessions.deleteById(authorization.substring(7));
+	}
 
 	/** 마이페이지 프로필, totalStreak = 내 그룹 현재 스트릭 합, totalCheckIns = 내 인증 전체 수 */
 	public record Profile(Long id, String nickname, String avatarUrl, int totalStreak, long totalCheckIns) {}
