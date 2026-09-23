@@ -81,6 +81,28 @@ class MoinFlowTest {
 	@Autowired PeriodService periodService;
 	@Autowired NotificationScheduler notificationScheduler;
 	@Autowired RecordingSender sender;
+	@Autowired PushDeviceRepository devices;
+
+	@Test
+	void 로그아웃은_현재_세션과_본인_기기만_해제한다() throws Exception {
+		String current = login("로그아웃 검증");
+		String otherSession = login("로그아웃 검증");
+		String anotherUser = login("다른 계정 검증");
+		mvc.perform(json(post("/me/push-token"), current).content("{\"token\":\"logout-device\",\"platform\":\"ios\"}"))
+				.andExpect(status().isNoContent());
+		mvc.perform(json(post("/me/push-token"), anotherUser).content("{\"token\":\"other-device\",\"platform\":\"ios\"}"))
+				.andExpect(status().isNoContent());
+		mvc.perform(json(post("/me/logout"), current).content("{\"pushToken\":\"logout-device\"}"))
+				.andExpect(status().isNoContent());
+		mvc.perform(get("/me").header("Authorization", "Bearer " + current)).andExpect(status().isUnauthorized());
+		mvc.perform(get("/me").header("Authorization", "Bearer " + otherSession)).andExpect(status().isOk());
+		assertEquals(false, devices.existsById("logout-device"));
+		mvc.perform(json(post("/me/logout"), otherSession).content("{\"pushToken\":\"other-device\"}"))
+				.andExpect(status().isNoContent());
+		assertEquals(true, devices.existsById("other-device"));
+		mvc.perform(get("/me").header("Authorization", "Bearer " + anotherUser)).andExpect(status().isOk());
+		mvc.perform(post("/me/logout")).andExpect(status().isUnauthorized());
+	}
 
 	@Test
 	void 배포_상태확인은_인증없이_가능하고_업무API는_보호된다() throws Exception {
