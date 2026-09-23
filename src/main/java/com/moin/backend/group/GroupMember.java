@@ -31,7 +31,7 @@ public class GroupMember {
 	@Column(nullable = false)
 	private Long userId;
 
-	/** 이 날(기간 시작일)부터 집계에 포함, 초대로 들어오면 다음 기간 시작일 */
+	/** 참여 당시 기간 시작일부터 집계에 포함, 이전 기간 기록은 유지 */
 	@Column(nullable = false)
 	private LocalDate activeFrom;
 

@@ -125,7 +125,7 @@ public class GroupController {
 		return groupService.preview(groupService.byInviteCode(code), userId);
 	}
 
-	/** 참여, 이번 기간엔 집계 제외, 다음 기간 시작일부터 활동 멤버 */
+	/** 참여 즉시 현재 기간의 활동 인원과 인증 집계에 포함 */
 	@PostMapping("/invite/{code}/join")
 	@ResponseStatus(HttpStatus.CREATED)
 	public GroupDetail join(@RequestAttribute("userId") Long userId, @PathVariable("code") String code) {
@@ -133,7 +133,7 @@ public class GroupController {
 		if (members.findByGroupIdAndUserId(g.getId(), userId).isPresent()) {
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 참여한 그룹이에요");
 		}
-		LocalDate joinsFrom = periodService.periodEnd(g, periodService.currentPeriodStart(g));
+		LocalDate joinsFrom = periodService.currentPeriodStart(g);
 		GroupMember m = members.save(new GroupMember(g.getId(), userId, joinsFrom, periodService.now()));
 		return groupService.detail(g, m);
 	}

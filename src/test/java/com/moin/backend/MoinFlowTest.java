@@ -35,6 +35,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.jayway.jsonpath.JsonPath;
+import com.moin.backend.group.GroupMemberRepository;
+import com.moin.backend.group.PendingMembershipMigration;
 import com.moin.backend.notification.NotificationScheduler;
 import com.moin.backend.notification.PushSender;
 import com.moin.backend.period.PeriodService;
@@ -82,6 +84,55 @@ class MoinFlowTest {
 	@Autowired NotificationScheduler notificationScheduler;
 	@Autowired RecordingSender sender;
 	@Autowired PushDeviceRepository devices;
+	@Autowired GroupMemberRepository memberships;
+	@Autowired PendingMembershipMigration membershipMigration;
+
+	@Test
+	@org.springframework.transaction.annotation.Transactional
+	void 주중_참여와_기존_대기는_즉시_인증하고_지난_기간은_유지한다() throws Exception {
+		Instant previous = clock.now;
+		try {
+			clock.now = Instant.parse("2026-09-09T01:00:00Z");
+			String owner = login("주간 방장");
+			String friend = login("주간 새 멤버");
+			String created = mvc.perform(json(post("/groups"), owner)
+					.content("{\"name\":\"주간 인증\",\"frequency\":\"WEEKLY\",\"weeklyTarget\":2}"))
+					.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+			long groupId = ((Number) JsonPath.read(created, "$.card.id")).longValue();
+			String code = JsonPath.read(created, "$.inviteCode");
+			clock.now = Instant.parse("2026-09-16T01:00:00Z");
+			mvc.perform(get("/groups/invite/" + code).header("Authorization", "Bearer " + friend))
+					.andExpect(jsonPath("$.joinsFrom").value("2026-09-14"));
+			mvc.perform(post("/groups/invite/" + code + "/join").header("Authorization", "Bearer " + friend))
+					.andExpect(status().isCreated())
+					.andExpect(jsonPath("$.card.joinsNextPeriod").value(false))
+					.andExpect(jsonPath("$.card.activeCount").value(2));
+			var pending = memberships.findByGroupId(groupId).stream()
+					.filter(m -> m.getActiveFrom().toString().equals("2026-09-14")).findFirst().orElseThrow();
+			pending.setActiveFrom(java.time.LocalDate.parse("2026-09-21"));
+			memberships.saveAndFlush(pending);
+			membershipMigration.run(null);
+			membershipMigration.run(null); // 재시작해도 현재·과거 기간은 그대로
+			mvc.perform(get("/groups/" + groupId).header("Authorization", "Bearer " + friend))
+					.andExpect(jsonPath("$.card.joinsNextPeriod").value(false))
+					.andExpect(jsonPath("$.card.activeCount").value(2));
+			String checkInUrl = "/groups/" + groupId + "/check-ins";
+			MockMultipartFile video = new MockMultipartFile("video", "weekly.mp4", "video/mp4", new byte[] { 1, 2, 3 });
+			mvc.perform(multipart(checkInUrl).file(video).header("Authorization", "Bearer " + friend))
+					.andExpect(status().isCreated())
+					.andExpect(jsonPath("$.group.myDoneCount").value(1))
+					.andExpect(jsonPath("$.group.myDone").value(false));
+			clock.now = clock.now.plus(Duration.ofDays(1));
+			mvc.perform(multipart(checkInUrl).file(video).header("Authorization", "Bearer " + friend))
+					.andExpect(status().isCreated())
+					.andExpect(jsonPath("$.group.myDoneCount").value(2))
+					.andExpect(jsonPath("$.group.myDone").value(true));
+			mvc.perform(get(checkInUrl).param("date", "2026-09-09").header("Authorization", "Bearer " + owner))
+					.andExpect(jsonPath("$.activeCount").value(1));
+		} finally {
+			clock.now = previous;
+		}
+	}
 
 	@Test
 	void 로그아웃은_현재_세션과_본인_기기만_해제한다() throws Exception {
@@ -178,14 +229,14 @@ class MoinFlowTest {
 				.andExpect(jsonPath("$.name").value("모닝 러닝"))
 				.andExpect(jsonPath("$.memberCount").value(1))
 				.andExpect(jsonPath("$.alreadyMember").value(false))
-				.andExpect(jsonPath("$.joinsFrom").value("2026-09-17"));
+				.andExpect(jsonPath("$.joinsFrom").value("2026-09-16"));
 
 		mvc.perform(post("/groups/invite/" + code + "/join").header("Authorization", "Bearer " + friend))
 				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.card.joinsNextPeriod").value(true))
+				.andExpect(jsonPath("$.card.joinsNextPeriod").value(false))
 				.andExpect(jsonPath("$.isOwner").value(false))
-				.andExpect(jsonPath("$.card.state").value("WAITING_OTHERS"))
-				.andExpect(jsonPath("$.card.activeCount").value(1)); // 이번 기간엔 집계 안 됨
+				.andExpect(jsonPath("$.card.state").value("NEEDS_ME"))
+				.andExpect(jsonPath("$.card.activeCount").value(2)); // 참여 즉시 집계
 		mvc.perform(post("/groups/invite/" + code + "/join").header("Authorization", "Bearer " + friend))
 				.andExpect(status().isConflict())
 				.andExpect(status().reason("이미 참여한 그룹이에요"));
@@ -194,7 +245,7 @@ class MoinFlowTest {
 				.andExpect(jsonPath("$.alreadyMember").value(true));
 		mvc.perform(get("/groups").header("Authorization", "Bearer " + friend))
 				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].joinsNextPeriod").value(true));
+				.andExpect(jsonPath("$[0].joinsNextPeriod").value(false));
 
 		// --- 이름 변경: 방장만 ---
 		mvc.perform(json(patch("/groups/" + groupId), friend).content("{\"name\":\"저녁 러닝\"}"))
@@ -212,13 +263,14 @@ class MoinFlowTest {
 		MockMultipartFile video = new MockMultipartFile("video", "a.mp4", "video/mp4", new byte[] { 1, 2, 3 });
 		MockMultipartFile text = new MockMultipartFile("video", "a.txt", "text/plain", new byte[] { 1 });
 		mvc.perform(multipart(checkInUrl).file(video).header("Authorization", "Bearer " + friend))
-				.andExpect(status().isConflict()); // 다음 기간부터
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.allComplete").value(false)); // 참여 직후 인증 가능
 		mvc.perform(multipart(checkInUrl).file(text).header("Authorization", "Bearer " + owner))
 				.andExpect(status().isUnsupportedMediaType());
 		String checkedIn = mvc.perform(multipart(checkInUrl).file(video).header("Authorization", "Bearer " + owner))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.logicalDate").value("2026-09-16"))
-				.andExpect(jsonPath("$.allComplete").value(true)) // 활동 멤버가 나 혼자
+				.andExpect(jsonPath("$.allComplete").value(true)) // 친구와 방장 모두 인증
 				.andExpect(jsonPath("$.videoUrl", startsWith("/videos/")))
 				.andExpect(jsonPath("$.group.state").value("COMPLETE"))
 				.andExpect(jsonPath("$.group.myDone").value(true))
@@ -231,9 +283,9 @@ class MoinFlowTest {
 
 		// --- 상세 ---
 		mvc.perform(get("/groups/" + groupId).header("Authorization", "Bearer " + owner))
-				.andExpect(jsonPath("$.card.completedCount").value(1))
+				.andExpect(jsonPath("$.card.completedCount").value(2))
 				.andExpect(jsonPath("$.card.members[0].videoUrl").value(videoUrl))
-				.andExpect(jsonPath("$.periodVideoCount").value(1))
+				.andExpect(jsonPath("$.periodVideoCount").value(2))
 				.andExpect(jsonPath("$.streak.current").value(0)); // 아직 마감 전
 		mvc.perform(get("/groups/" + groupId).header("Authorization", "Bearer " + login("외부인")))
 				.andExpect(status().isForbidden());
@@ -242,7 +294,7 @@ class MoinFlowTest {
 		mvc.perform(get("/me").header("Authorization", "Bearer " + owner))
 				.andExpect(jsonPath("$.totalCheckIns").value(1));
 
-		// --- 하루 지나 마감, 나 혼자 인증했으니 PERFECT, 스트릭 1, 친구는 이제 활동 멤버 ---
+		// --- 하루 지나 마감, 참여 당일 둘 다 인증해 PERFECT, 스트릭 1 ---
 		clock.now = clock.now.plus(Duration.ofDays(1)); // 9/17 10:00 KST
 		periodService.closeAllDuePeriods();
 		mvc.perform(get("/groups/" + groupId).header("Authorization", "Bearer " + owner))
@@ -283,12 +335,12 @@ class MoinFlowTest {
 				.andExpect(jsonPath("$.monthClosedPeriods").value(5))
 				.andExpect(jsonPath("$.monthCompletedPeriods").value(2));
 
-		// --- 피드: 9/16 은 방장 혼자, 9/17 은 친구만 인증, 오늘(9/21)은 아무도 ---
+		// --- 피드: 참여 당일 둘 다 인증, 다음 날 친구만 인증, 오늘은 미인증 ---
 		String feedUrl = "/groups/" + groupId + "/check-ins";
 		mvc.perform(get(feedUrl).param("date", "2026-09-16").header("Authorization", "Bearer " + owner))
 				.andExpect(jsonPath("$.date").value("2026-09-16"))
-				.andExpect(jsonPath("$.completedCount").value(1))
-				.andExpect(jsonPath("$.activeCount").value(1)) // 친구는 9/17 부터
+				.andExpect(jsonPath("$.completedCount").value(2))
+				.andExpect(jsonPath("$.activeCount").value(2))
 				.andExpect(jsonPath("$.members[0].nickname").value("정혁"))
 				.andExpect(jsonPath("$.members[0].videoUrl").value(videoUrl));
 		mvc.perform(get(feedUrl).param("date", "2026-09-17").header("Authorization", "Bearer " + owner))
@@ -306,7 +358,7 @@ class MoinFlowTest {
 		mvc.perform(get(feedUrl).header("Authorization", "Bearer " + login("외부인")))
 				.andExpect(status().isForbidden());
 
-		// --- 달력: 9월 마감 5개(PERFECT, PASS, FAILED x3), 인증 2건, 완벽 비율 20% ---
+		// --- 달력: 9월 마감 5개(PERFECT, PASS, FAILED x3), 인증 3건, 완벽 비율 20% ---
 		String calendarUrl = "/groups/" + groupId + "/calendar";
 		mvc.perform(get(calendarUrl).param("month", "2026-09").header("Authorization", "Bearer " + owner))
 				.andExpect(jsonPath("$.month").value("2026-09"))
@@ -317,7 +369,7 @@ class MoinFlowTest {
 				.andExpect(jsonPath("$.periods[0].status").value("PERFECT"))
 				.andExpect(jsonPath("$.periods[1].status").value("PASS"))
 				.andExpect(jsonPath("$.periods[4].status").value("FAILED"))
-				.andExpect(jsonPath("$.totalCheckIns").value(2))
+				.andExpect(jsonPath("$.totalCheckIns").value(3))
 				.andExpect(jsonPath("$.longestStreak").value(2))
 				.andExpect(jsonPath("$.perfectRate").value(20));
 		mvc.perform(get(calendarUrl).header("Authorization", "Bearer " + owner))
@@ -329,14 +381,14 @@ class MoinFlowTest {
 		mvc.perform(get(calendarUrl).param("month", "9월").header("Authorization", "Bearer " + owner))
 				.andExpect(status().isBadRequest());
 
-		// --- 마이페이지 내 그룹: 방장은 마감 5개 중 1개 완료(20%), 친구는 9/17 이후 4개 중 1개(25%) ---
+		// --- 마이페이지 내 그룹: 방장은 마감 5개 중 1개 완료(20%), 친구는 5개 중 2개(40%) ---
 		mvc.perform(get("/me/groups").header("Authorization", "Bearer " + owner))
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].name").value("저녁 러닝"))
 				.andExpect(jsonPath("$[0].streak").value(0))
 				.andExpect(jsonPath("$[0].achievementRate").value(20));
 		mvc.perform(get("/me/groups").header("Authorization", "Bearer " + friend))
-				.andExpect(jsonPath("$[0].achievementRate").value(25));
+				.andExpect(jsonPath("$[0].achievementRate").value(40));
 
 		// --- 알림 설정: 기본 전부 켬, 그룹 음소거는 멤버만 ---
 		mvc.perform(get("/me/notification-settings").header("Authorization", "Bearer " + owner))
