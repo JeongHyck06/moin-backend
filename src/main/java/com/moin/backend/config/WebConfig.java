@@ -26,7 +26,7 @@ public class WebConfig implements WebMvcConfigurer {
 	public void addInterceptors(InterceptorRegistry registry) {
 		registry.addInterceptor(authInterceptor)
 				.addPathPatterns("/**")
-				.excludePathPatterns("/auth/**", "/app/**", "/error", "/videos/**", "/actuator/health", "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**");
+				.excludePathPatterns("/auth/**", "/app/**", "/error", "/videos/**", "/avatars/**", "/actuator/health", "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**");
 	}
 
 	/** 업로드 디렉터리를 /videos/** 로 그대로 서빙, 파일명이 UUID 라 인증 없이 열어도 추측 불가 */
@@ -35,5 +35,8 @@ public class WebConfig implements WebMvcConfigurer {
 		String location = Paths.get(uploadDir).toAbsolutePath().toUri().toString();
 		registry.addResourceHandler("/videos/**")
 				.addResourceLocations(location.endsWith("/") ? location : location + "/");
+		String avatars = Paths.get(uploadDir, "avatars").toAbsolutePath().toUri().toString();
+		registry.addResourceHandler("/avatars/**")
+				.addResourceLocations(avatars.endsWith("/") ? avatars : avatars + "/");
 	}
 }
