@@ -80,12 +80,12 @@ public class GroupService {
 
 	/**
 	 * Join 화면 미리보기, memberCount 는 대기 멤버까지 포함한 전체, members 는 이번 기간 활동 멤버만
-	 * joinsFrom 은 지금 참여하면 집계가 시작되는 날 = 현재 기간 종료일
+	 * joinsFrom 은 참여 즉시 집계되는 현재 기간의 시작일
 	 */
 	public InvitePreview preview(Group g, Long me) {
 		GroupCard card = card(g, me);
 		boolean already = members.findByGroupIdAndUserId(g.getId(), me).isPresent();
-		LocalDate joinsFrom = periodService.periodEnd(g, periodService.currentPeriodStart(g));
+		LocalDate joinsFrom = periodService.currentPeriodStart(g);
 		return new InvitePreview(g.getId(), g.getName(), g.getFrequency(), g.getWeeklyTarget(), g.getResetTime(),
 				members.findByGroupId(g.getId()).size(), card.streak(), card.members(), already, joinsFrom);
 	}
