@@ -615,6 +615,78 @@ class MoinFlowTest {
 		}
 	}
 
+	@Autowired com.moin.backend.auth.SessionRepository sessions;
+	@Autowired com.moin.backend.checkin.CheckInRepository checkIns;
+	@Autowired com.moin.backend.freeze.FreezeGrantRepository grants;
+	@Autowired com.moin.backend.freeze.AdSessionRepository adSessions;
+	@Autowired com.moin.backend.group.GroupRepository groupRepository;
+	@Autowired com.moin.backend.user.AccountDeletionService deletion;
+	@Autowired org.springframework.transaction.PlatformTransactionManager transactions;
+
+	@Test
+	void 탈퇴는_전체세션과_내기록을_삭제하고_다른멤버와_모임을_보존한다() throws Exception {
+		String owner = login("탈퇴 테스트");
+		String second = login("탈퇴 테스트");
+		String friend = login("탈퇴 보존 멤버");
+		var ownUser = users.findByExternalId("dev:탈퇴 테스트").orElseThrow();
+		long userId = ownUser.getId();
+		String body = mvc.perform(json(post("/groups"), owner).content("{\"name\":\"보존 모임\",\"frequency\":\"DAILY\"}"))
+			.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		long groupId = ((Number) JsonPath.read(body, "$.card.id")).longValue();
+		mvc.perform(json(post("/groups/invite/" + JsonPath.read(body, "$.inviteCode") + "/join"), friend)).andExpect(status().isCreated());
+		String solo = mvc.perform(json(post("/groups"), owner).content("{\"name\":\"혼자 모임\",\"frequency\":\"DAILY\"}"))
+			.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		long soloId = ((Number) JsonPath.read(solo, "$.card.id")).longValue();
+		String upload = "/groups/" + groupId + "/check-ins";
+		String mine = mvc.perform(multipart(upload).file(new MockMultipartFile("video", "v.mp4", "video/mp4", new byte[]{1,2,3}))
+			.header("Authorization", "Bearer " + owner)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		String theirs = mvc.perform(multipart(upload).file(new MockMultipartFile("video", "v.mp4", "video/mp4", new byte[]{4,5,6}))
+			.header("Authorization", "Bearer " + friend)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		long mineId = ((Number) JsonPath.read(mine, "$.id")).longValue();
+		long theirId = ((Number) JsonPath.read(theirs, "$.id")).longValue();
+		String video = JsonPath.read(mine, "$.videoUrl");
+		mvc.perform(json(post(upload + "/" + mineId + "/comments"), friend).content("{\"body\":\"삭제될 영상 댓글\"}"));
+		mvc.perform(json(post(upload + "/" + theirId + "/comments"), owner).content("{\"body\":\"탈퇴자 댓글\"}"));
+		mvc.perform(json(post(upload + "/" + theirId + "/comments"), friend).content("{\"body\":\"남을 댓글\"}"));
+		var bytes = new java.io.ByteArrayOutputStream();
+		javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(8, 8, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", bytes);
+		String profile = mvc.perform(multipart("/me/profile").file(new MockMultipartFile("avatar", "a.png", "image/png", bytes.toByteArray()))
+			.param("nickname", "탈퇴 테스트").header("Authorization", "Bearer " + owner)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		String avatar = JsonPath.read(profile, "$.avatarUrl");
+		devices.save(new com.moin.backend.user.PushDevice("delete-device", userId, "ios", clock.instant()));
+		grants.save(new com.moin.backend.freeze.FreezeGrant("apple:delete-fixture", userId, 10, clock.instant()));
+		var ad = adSessions.save(new com.moin.backend.freeze.AdSession(userId, java.time.LocalDate.of(2026, 9, 14), clock.instant().plusSeconds(3600)));
+		// Apple 기존 계정의 수동 해제 안내도 확인, 실제 외부 계정은 사용하지 않음
+		ownUser = users.findById(userId).orElseThrow(); ownUser.setExternalId("apple:delete-fixture"); users.save(ownUser);
+		mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/me")).andExpect(status().isUnauthorized());
+		mvc.perform(json(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/me"), owner).content("{\"confirmed\":false}"))
+			.andExpect(status().isBadRequest());
+		var tx = new org.springframework.transaction.support.TransactionTemplate(transactions);
+		org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> tx.execute(status -> { deletion.delete(userId, true); throw new IllegalStateException("rollback"); }));
+		mvc.perform(get(video)).andExpect(status().isOk());
+		mvc.perform(json(get("/me"), owner)).andExpect(status().isOk());
+		mvc.perform(json(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/me"), owner).content("{\"confirmed\":true}"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.appleManualRevocationRequired").value(true));
+		org.junit.jupiter.api.Assertions.assertFalse(users.existsById(userId));
+		org.junit.jupiter.api.Assertions.assertFalse(sessions.existsById(owner));
+		org.junit.jupiter.api.Assertions.assertFalse(sessions.existsById(second));
+		org.junit.jupiter.api.Assertions.assertFalse(devices.existsById("delete-device"));
+		org.junit.jupiter.api.Assertions.assertFalse(grants.existsById("apple:delete-fixture"));
+		org.junit.jupiter.api.Assertions.assertFalse(adSessions.existsById(ad.getId()));
+		org.junit.jupiter.api.Assertions.assertFalse(groupRepository.existsById(soloId));
+		assertEquals(0, checkIns.countByUserId(userId));
+		assertEquals(0, memberships.findByUserId(userId).size());
+		mvc.perform(get(video)).andExpect(status().isNotFound());
+		mvc.perform(get(avatar)).andExpect(status().isNotFound());
+		org.junit.jupiter.api.Assertions.assertFalse(java.nio.file.Files.exists(java.nio.file.Path.of("build/test-uploads", video.substring(8))));
+		mvc.perform(json(get("/me"), second)).andExpect(status().isUnauthorized());
+		mvc.perform(json(get("/groups/" + groupId), friend)).andExpect(status().isOk()).andExpect(jsonPath("$.isOwner").value(true));
+		mvc.perform(get((String) JsonPath.read(theirs, "$.videoUrl"))).andExpect(status().isOk());
+		mvc.perform(json(get(upload + "/" + theirId + "/comments"), friend)).andExpect(jsonPath("$.items.length()").value(1))
+			.andExpect(jsonPath("$.items[0].body").value("남을 댓글"));
+		deletion.delete(users.findByExternalId("dev:탈퇴 보존 멤버").orElseThrow().getId(), true);
+	}
+
 	private String login(String nickname) throws Exception {
 		String body = mvc.perform(post("/auth/dev")
 						.contentType(MediaType.APPLICATION_JSON)

@@ -43,6 +43,7 @@ public class GroupController {
 	private static final SecureRandom RANDOM = new SecureRandom();
 
 	private final GroupRepository groups;
+	private final com.moin.backend.user.UserRepository users;
 	private final GroupMemberRepository members;
 	private final GroupService groupService;
 	private final PeriodService periodService;
@@ -73,6 +74,7 @@ public class GroupController {
 	@ResponseStatus(HttpStatus.CREATED)
 	@Transactional
 	public GroupDetail create(@RequestAttribute("userId") Long userId, @Valid @RequestBody CreateGroup body) {
+		users.lockById(userId).orElseThrow();
 		boolean weekly = body.frequency() == Group.Frequency.WEEKLY;
 		if (weekly && body.weeklyTarget() == null) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "주당 횟수를 정해주세요");
@@ -101,9 +103,10 @@ public class GroupController {
 	}
 
 	/** 이름만 바꿀 수 있고, 방장만 */
+	@Transactional
 	@PatchMapping("/{id}")
 	public GroupDetail rename(@RequestAttribute("userId") Long userId, @PathVariable("id") Long id, @Valid @RequestBody Rename body) {
-		Group g = groupService.get(id);
+		Group g = groupService.getForUpdate(id);
 		GroupMember me = groupService.membership(id, userId);
 		if (!g.getOwnerId().equals(userId)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "방장만 바꿀 수 있어요");
 		g.setName(body.name());
@@ -111,9 +114,11 @@ public class GroupController {
 	}
 
 	/** 그룹별 음소거, 알림 종류 토글과 별개로 이 그룹 알림만 끔 */
+	@Transactional
 	@PutMapping("/{id}/mute")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void mute(@RequestAttribute("userId") Long userId, @PathVariable("id") Long id, @RequestBody Mute body) {
+		groupService.getForUpdate(id);
 		GroupMember me = groupService.membership(id, userId);
 		me.setMuted(body.muted());
 		members.save(me);
@@ -126,10 +131,12 @@ public class GroupController {
 	}
 
 	/** 참여 즉시 현재 기간의 활동 인원과 인증 집계에 포함 */
+	@Transactional
 	@PostMapping("/invite/{code}/join")
 	@ResponseStatus(HttpStatus.CREATED)
 	public GroupDetail join(@RequestAttribute("userId") Long userId, @PathVariable("code") String code) {
-		Group g = groupService.byInviteCode(code);
+		Group g = groupService.getForUpdate(groupService.byInviteCode(code).getId());
+		users.lockById(userId).orElseThrow();
 		if (members.findByGroupIdAndUserId(g.getId(), userId).isPresent()) {
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 참여한 그룹이에요");
 		}

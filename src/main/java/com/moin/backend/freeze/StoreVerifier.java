@@ -20,6 +20,15 @@ import com.google.auth.oauth2.GoogleCredentials;
 @Component
 public class StoreVerifier {
     public static final String PRODUCT = "com.moin.freeze.one";
+    public static final String TEN_PACK = "com.moin.freeze.ten";
+    public record Product(String productId, int quantity) {}
+    public static final List<Product> PRODUCTS = List.of(new Product(PRODUCT, 1), new Product(TEN_PACK, 10));
+
+    /** 영수증의 상품 ID만 수량으로 변환, 클라이언트가 보낸 수량은 신뢰하지 않음 */
+    public static int units(String productId) {
+        return PRODUCTS.stream().filter(p -> p.productId().equals(productId)).findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "지원하지 않는 프리즈 상품이에요")).quantity();
+    }
     @Value("${moin.store.apple-key:}") private String appleKey;
     @Value("${moin.store.apple-key-id:}") private String appleKeyId;
     @Value("${moin.store.apple-issuer:}") private String appleIssuer;
@@ -70,10 +79,11 @@ public class StoreVerifier {
         }
         var client = new AppStoreServerAPIClient(Files.readString(Path.of(appleKey)), appleKeyId, appleIssuer, "com.moin", env);
         transaction = verifier.verifyAndDecodeTransaction(client.getTransactionInfo(transaction.getTransactionId()).getSignedTransactionInfo());
-        if (!PRODUCT.equals(transaction.getProductId()) || !account(userId).equals(transaction.getAppAccountToken())
+        int units = units(transaction.getProductId());
+        if (!account(userId).equals(transaction.getAppAccountToken())
                 || transaction.getRevocationDate() != null || transaction.getQuantity() == null || transaction.getQuantity() != 1)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이 계정의 유효한 프리즈 구매가 아니에요");
-        return new Verified("apple:" + transaction.getTransactionId(), 1);
+        return new Verified("apple:" + transaction.getTransactionId(), units);
     }
 
     @SuppressWarnings("unchecked")
@@ -89,12 +99,13 @@ public class StoreVerifier {
         var state = (Map<String, Object>) response.get("purchaseStateContext");
         var lines = (List<Map<String, Object>>) response.get("productLineItem");
         if (!"PURCHASED".equals(state.get("purchaseState")) || !account(userId).toString().equals(response.get("obfuscatedExternalAccountId"))
-                || (!sandbox && response.get("testPurchaseContext") != null) || lines == null || lines.size() != 1 || !PRODUCT.equals(lines.get(0).get("productId")))
+                || (!sandbox && response.get("testPurchaseContext") != null) || lines == null || lines.size() != 1)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이 계정의 유효한 프리즈 구매가 아니에요");
+        int units = units((String) lines.get(0).get("productId"));
         var offer = (Map<String, Object>) lines.get(0).get("productOfferDetails");
         int quantity = ((Number) offer.getOrDefault("quantity", 1)).intValue();
         int refundable = ((Number) offer.getOrDefault("refundableQuantity", quantity)).intValue();
         if (quantity != 1 || refundable != 1) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "취소되었거나 지원하지 않는 구매예요");
-        return new Verified("google:" + digest(token), 1);
+        return new Verified("google:" + digest(token), units);
     }
 }

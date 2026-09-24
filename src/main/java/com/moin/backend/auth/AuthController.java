@@ -55,6 +55,7 @@ public class AuthController {
 			@NotBlank @Size(max = 128) String nonce, @Size(max = 100) String fullName) {}
 	public record AppleChallenge(String nonce) {}
 
+	@org.springframework.transaction.annotation.Transactional
 	@PostMapping("/google")
 	public LoginResponse google(@Valid @RequestBody GoogleLogin body) {
 		var identity = identityTokens.google(body.idToken());
@@ -66,6 +67,7 @@ public class AuthController {
 		return new AppleChallenge(identityTokens.challenge());
 	}
 
+	@org.springframework.transaction.annotation.Transactional
 	@PostMapping("/apple")
 	public LoginResponse apple(@Valid @RequestBody AppleLogin body) {
 		var identity = identityTokens.apple(body.identityToken(), body.nonce());
@@ -75,6 +77,7 @@ public class AuthController {
 	record KakaoUser(long id, Map<String, Object> properties) {}
 
 	/** 앱이 카카오 SDK로 받은 access token을 서버에서 검증하고 세션 토큰을 발급 */
+	@org.springframework.transaction.annotation.Transactional
 	@PostMapping("/kakao")
 	public LoginResponse kakao(@Valid @RequestBody KakaoLogin body) {
 		KakaoUser k;
@@ -90,6 +93,7 @@ public class AuthController {
 	}
 
 	/** 개발용, moin.dev-login=true 일 때만 열림 */
+	@org.springframework.transaction.annotation.Transactional
 	@PostMapping("/dev")
 	public LoginResponse dev(@Valid @RequestBody DevLogin body) {
 		if (!devLogin) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
@@ -102,6 +106,7 @@ public class AuthController {
 		if (displayName != null && displayName.length() > 20) displayName = displayName.substring(0, displayName.offsetByCodePoints(0, Math.min(20, displayName.codePointCount(0, displayName.length()))));
 		User user = users.findByExternalId(externalId).orElse(null);
 		if (user == null) user = new User(externalId, displayName == null ? "모인" : displayName, avatarUrl);
+		else user = users.lockById(user.getId()).orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
 		users.save(user);
 
 		byte[] bytes = new byte[32];

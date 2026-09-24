@@ -141,7 +141,7 @@ public class PeriodService {
 	@Scheduled(fixedDelayString = "${moin.close-interval-ms}")
 	@Transactional
 	public void closeAllDuePeriods() {
-		groups.findAll().forEach(this::closeDuePeriods);
+		groups.findAll().stream().sorted(java.util.Comparator.comparing(Group::getId)).forEach(this::closeDuePeriods);
 	}
 
 	/**
@@ -150,7 +150,7 @@ public class PeriodService {
 	 */
 	@Transactional
 	public void closeDuePeriods(Group g) {
-		groups.lockById(g.getId()).orElseThrow();
+		if (groups.lockById(g.getId()).isEmpty()) return;
 		LocalDate current = currentPeriodStart(g);
 		LocalDate next = periods.findTopByGroupIdOrderByPeriodStartDesc(g.getId())
 				.map(Period::getPeriodEnd)

@@ -12,4 +12,6 @@ public interface CheckInRepository extends JpaRepository<CheckIn, Long> {
 	long countByGroupIdAndLogicalDateBetween(Long groupId, LocalDate from, LocalDate toInclusive);
 	boolean existsByGroupIdAndUserIdAndLogicalDate(Long groupId, Long userId, LocalDate logicalDate);
 	boolean existsByGroupIdAndUserIdAndFreezeMonth(Long groupId, Long userId, LocalDate freezeMonth);
+	List<CheckIn> findByUserId(Long userId);
+	void deleteByUserId(Long userId);
 }
