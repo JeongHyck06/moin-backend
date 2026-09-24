@@ -54,6 +54,14 @@ public class MeController {
 	private final PushDeviceRepository devices;
 	private final SessionRepository sessions;
 	private final AvatarStorage avatars;
+	private final AccountDeletionService deletion;
+	private final com.moin.backend.storage.FileDeletionService fileDeletion;
+	public record DeleteAccount(boolean confirmed) {}
+
+	@org.springframework.web.bind.annotation.DeleteMapping
+	public AccountDeletionService.Result delete(@RequestAttribute("userId") Long userId, @RequestBody DeleteAccount body) {
+		return deletion.delete(userId, body.confirmed());
+	}
 
 	public record Logout(@Size(max = 512) String pushToken) {}
 
@@ -68,7 +76,7 @@ public class MeController {
 	}
 
 	/** 마이페이지 프로필, totalStreak = 내 그룹 현재 스트릭 합, totalCheckIns = 내 인증 전체 수 */
-	public record Profile(Long id, String nickname, String avatarUrl, int totalStreak, long totalCheckIns) {}
+	public record Profile(Long id, String nickname, String avatarUrl, int totalStreak, long totalCheckIns, String provider) {}
 
 	/** 본인 프로필만 변경, 사진 검증 실패 시 닉네임도 함께 유지 */
 	@PostMapping(value = "/profile", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -79,8 +87,12 @@ public class MeController {
 		if (name.isBlank() || name.length() > 20) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "닉네임은 1~20자로 입력해주세요");
 		}
-		User user = users.findById(userId).orElseThrow();
-		if (avatar != null) user.setAvatarUrl(avatars.save(avatar));
+		User user = users.lockById(userId).orElseThrow();
+		if (avatar != null) {
+			String saved = avatars.save(avatar);
+			fileDeletion.enqueue(user.getAvatarUrl());
+			user.setAvatarUrl(saved);
+		}
 		user.setNickname(name);
 		users.save(user);
 		return me(userId);
@@ -91,7 +103,7 @@ public class MeController {
 		User u = users.findById(userId).orElseThrow();
 		List<Long> groupIds = members.findByUserId(userId).stream().map(GroupMember::getGroupId).toList();
 		int totalStreak = groups.findAllById(groupIds).stream().mapToInt(g -> periodService.streak(g).current()).sum();
-		return new Profile(u.getId(), u.getNickname(), u.getAvatarUrl(), totalStreak, checkIns.countByUserId(userId));
+		return new Profile(u.getId(), u.getNickname(), u.getAvatarUrl(), totalStreak, checkIns.countByUserId(userId), u.getExternalId().split(":", 2)[0]);
 	}
 
 	/** 마이페이지 "내 그룹" 행, "달성률 92% · 12일" */
@@ -127,10 +139,11 @@ public class MeController {
 	}
 
 	/** 5개 전체 교체, 빠진 필드는 true 로 들어오니 앱은 항상 5개를 다 보낼 것 */
+	@Transactional
 	@PutMapping("/notification-settings")
 	public NotificationView updateNotifications(@RequestAttribute("userId") Long userId,
 			@RequestBody User.NotificationSettings body) {
-		User u = users.findById(userId).orElseThrow();
+		User u = users.lockById(userId).orElseThrow();
 		u.setNotifications(body);
 		return notificationView(users.save(u));
 	}
@@ -146,9 +159,11 @@ public class MeController {
 			@NotBlank(message = "platform 이 필요해요") @Pattern(regexp = "ios|android", message = "platform 은 ios 또는 android") String platform) {}
 
 	/** FCM 토큰 등록, 앱 시작마다 호출해도 되고 같은 토큰은 주인·시각만 갱신 (Phase 6 발송용) */
+	@Transactional
 	@PostMapping("/push-token")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void registerPushToken(@RequestAttribute("userId") Long userId, @Valid @RequestBody PushToken body) {
+		users.lockById(userId).orElseThrow();
 		devices.save(new PushDevice(body.token(), userId, body.platform(), periodService.now()));
 	}
 }

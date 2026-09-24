@@ -40,11 +40,12 @@ public class NotificationScheduler {
 	@Scheduled(fixedDelayString = "${moin.close-interval-ms}")
 	@Transactional
 	public void tick() {
-		groups.findAll().forEach(this::tick);
+		groups.findAll().stream().sorted(java.util.Comparator.comparing(Group::getId)).forEach(this::tick);
 	}
 
 	@Transactional
 	public void tick(Group g) {
+		if (groups.lockById(g.getId()).isEmpty()) return;
 		Instant now = periodService.now();
 		LocalDate today = periodService.today(g);
 		LocalDate periodStart = periodService.currentPeriodStart(g);

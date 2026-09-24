@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 public class AuthInterceptor implements HandlerInterceptor {
 
 	private final SessionRepository sessions;
+	private final com.moin.backend.user.UserRepository users;
 	private final Clock clock;
 
 	@Override
@@ -28,6 +29,7 @@ public class AuthInterceptor implements HandlerInterceptor {
 		Session session = sessions.findById(header.substring(7))
 				.filter(s -> s.getExpiresAt().isAfter(clock.instant()))
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "세션이 만료됐어요"));
+		if (!users.existsById(session.getUserId())) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
 		req.setAttribute("userId", session.getUserId());
 		return true;
 	}

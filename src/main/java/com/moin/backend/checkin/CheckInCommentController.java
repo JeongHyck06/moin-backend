@@ -68,6 +68,7 @@ public class CheckInCommentController {
 	@Transactional
 	public CommentView create(@RequestAttribute("userId") Long userId, @PathVariable("groupId") Long groupId,
 			@PathVariable("checkInId") Long checkInId, @Valid @RequestBody CreateComment request) {
+		groups.getForUpdate(groupId);
 		checkAccess(groupId, checkInId, userId);
 		String body = request.body().strip();
 		if (body.isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "댓글을 입력해주세요");
