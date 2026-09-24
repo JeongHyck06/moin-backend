@@ -545,6 +545,76 @@ class MoinFlowTest {
 				.andExpect(jsonPath("$.latestVersion").value("1.0.0"));
 	}
 
+	@Autowired com.moin.backend.user.UserRepository users;
+	@Autowired com.moin.backend.freeze.FreezeShopService freezeShop;
+	@Autowired com.moin.backend.freeze.AdmobVerifier admobVerifier;
+
+	@Test
+	@org.springframework.transaction.annotation.Transactional
+	void 프리즈는_월무료분부터_쓰고_광고는_검증후_주한번만_지급한다() throws Exception {
+		Instant before = clock.now;
+		String adUnit = "ca-app-pub-test/12345";
+		Object previousUnit = org.springframework.test.util.ReflectionTestUtils.getField(freezeShop, "androidUnit");
+		try {
+			clock.now = Instant.parse("2026-09-16T01:00:00Z");
+			String owner = login("프리즈 사용자");
+			String outsider = login("프리즈 외부인");
+			String body = mvc.perform(json(post("/groups"), owner).content("{\"name\":\"프리즈 테스트\",\"frequency\":\"DAILY\",\"allowedAbsences\":0,\"streakFreeze\":true}"))
+				.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+			long id = ((Number) JsonPath.read(body, "$.card.id")).longValue();
+			long userId = memberships.findByGroupId(id).get(0).getUserId();
+			users.findById(userId).orElseThrow().setFreezeBalance(1);
+			String path = "/groups/" + id + "/freezes";
+			mvc.perform(json(get(path).param("month", "2026-09"), owner)).andExpect(status().isOk())
+				.andExpect(jsonPath("$.monthlyRemaining").value(1)).andExpect(jsonPath("$.balance").value(1));
+			mvc.perform(json(post(path), outsider).content("{\"date\":\"2026-09-16\"}")).andExpect(status().isForbidden());
+			mvc.perform(json(post(path), owner).content("{\"date\":\"2026-09-15\"}")).andExpect(status().isBadRequest());
+			mvc.perform(json(post(path), owner).content("{\"date\":\"2026-09-17\"}")).andExpect(status().isBadRequest());
+			clock.now = clock.now.plus(Duration.ofDays(1));
+			mvc.perform(json(post(path), owner).content("{\"date\":\"2026-09-16\"}")).andExpect(status().isOk())
+				.andExpect(jsonPath("$.monthlyRemaining").value(0)).andExpect(jsonPath("$.balance").value(1));
+			mvc.perform(json(get("/groups/" + id + "/calendar").param("month", "2026-09"), owner))
+				.andExpect(jsonPath("$.periods[0].status").value("FROZEN")).andExpect(jsonPath("$.longestStreak").value(1));
+			mvc.perform(json(post(path), owner).content("{\"date\":\"2026-09-16\"}")).andExpect(status().isConflict());
+			mvc.perform(json(post(path), owner).content("{\"date\":\"2026-09-17\"}")).andExpect(status().isOk())
+				.andExpect(jsonPath("$.balance").value(0));
+			clock.now = clock.now.plus(Duration.ofDays(1));
+			mvc.perform(json(post(path), owner).content("{\"date\":\"2026-09-18\"}")).andExpect(status().isConflict());
+			mvc.perform(json(post("/me/freezes/purchases"), owner).content("{\"platform\":\"android\",\"token\":\"forged\"}"))
+				.andExpect(status().isServiceUnavailable());
+			mvc.perform(get("/callbacks/admob").queryParam("custom_data", "forged")).andExpect(status().isBadRequest());
+
+			// 로컬 서명 키로 원문 검증 후 실제 지급 경로 실행, 변조 및 중복 콜백 차단
+			org.springframework.test.util.ReflectionTestUtils.setField(freezeShop, "androidUnit", adUnit);
+			String session = freezeShop.startAd(userId).id();
+			var generator = java.security.KeyPairGenerator.getInstance("EC"); generator.initialize(256);
+			var pair = generator.generateKeyPair();
+			org.springframework.test.util.ReflectionTestUtils.setField(admobVerifier, "keys", Map.of("test", pair.getPublic()));
+			org.springframework.test.util.ReflectionTestUtils.setField(admobVerifier, "fetched", Instant.now());
+			String query = "ad_unit=12345&custom_data=" + session + "&reward_amount=1&reward_item=freeze&timestamp=" + clock.now.toEpochMilli() + "&transaction_id=test-reward";
+			var signer = java.security.Signature.getInstance("SHA256withECDSA"); signer.initSign(pair.getPrivate());
+			signer.update(query.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			String signed = query + "&signature=" + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(signer.sign()) + "&key_id=test";
+			org.junit.jupiter.api.Assertions.assertThrows(java.security.GeneralSecurityException.class,
+				() -> admobVerifier.verify(signed.replace("reward_amount=1", "reward_amount=2")));
+			freezeShop.reward(admobVerifier.verify(signed));
+			freezeShop.reward(admobVerifier.verify(signed));
+			assertEquals(1, freezeShop.wallet(userId).balance());
+			org.junit.jupiter.api.Assertions.assertFalse(freezeShop.wallet(userId).adAvailable());
+			mvc.perform(json(post("/me/freezes/ad-sessions"), owner)).andExpect(status().isConflict());
+			clock.now = Instant.parse("2026-10-01T01:00:00Z");
+			mvc.perform(json(get(path).param("month", "2026-09"), owner)).andExpect(jsonPath("$.monthlyRemaining").value(1));
+			mvc.perform(json(post(path), owner).content("{\"date\":\"2026-09-18\"}")).andExpect(status().isOk())
+				.andExpect(jsonPath("$.monthlyRemaining").value(0)).andExpect(jsonPath("$.balance").value(1));
+			org.junit.jupiter.api.Assertions.assertTrue(freezeShop.wallet(userId).adAvailable());
+		} finally {
+			clock.now = before;
+			org.springframework.test.util.ReflectionTestUtils.setField(freezeShop, "androidUnit", previousUnit);
+			org.springframework.test.util.ReflectionTestUtils.setField(admobVerifier, "keys", Map.of());
+			org.springframework.test.util.ReflectionTestUtils.setField(admobVerifier, "fetched", Instant.EPOCH);
+		}
+	}
+
 	private String login(String nickname) throws Exception {
 		String body = mvc.perform(post("/auth/dev")
 						.contentType(MediaType.APPLICATION_JSON)

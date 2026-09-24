@@ -89,11 +89,28 @@ public class PeriodService {
 	}
 
 	/** 순수 함수, 미완료 인원으로 기간 상태 결정 */
-	public static Period.Status status(Group g, long missing, boolean freezeAvailable) {
+	public static Period.Status status(Group g, long missing, boolean freezeUsed) {
+		if (missing > g.getAllowedAbsences()) return Period.Status.FAILED;
+		if (freezeUsed) return Period.Status.FROZEN;
 		if (missing == 0) return Period.Status.PERFECT;
-		if (missing <= g.getAllowedAbsences()) return Period.Status.PASS;
-		if (g.isStreakFreeze() && freezeAvailable) return Period.Status.FROZEN;
-		return Period.Status.FAILED;
+		return Period.Status.PASS;
+	}
+
+	/** 프리즈도 본인 인증 1회로 집계, 다른 멤버의 미인증까지 대신 채우지는 않음 */
+	private Period.Status result(Group g, LocalDate start) {
+		Map<Long, List<CheckIn>> done = checkInsByUser(g, start);
+		List<GroupMember> active = activeMembers(g, start);
+		long missing = active.stream().filter(m -> done.getOrDefault(m.getUserId(), List.of()).size() < g.target()).count();
+		boolean frozen = active.stream().flatMap(m -> done.getOrDefault(m.getUserId(), List.of()).stream()).anyMatch(CheckIn::isFrozen);
+		return status(g, missing, frozen);
+	}
+
+	/** 마감된 날짜의 인증 보충 시 저장 결과도 갱신, 기존 자동 프리즈 기록은 소급 취소하지 않음 */
+	public void refreshClosedPeriod(Group g, LocalDate date) {
+		periods.findByGroupIdAndPeriodStart(g.getId(), periodStart(g, date)).ifPresent(p -> {
+			Period.Status updated = result(g, p.getPeriodStart());
+			if (p.getStatus() != Period.Status.FROZEN || updated != Period.Status.FAILED) p.updateStatus(updated);
+		});
 	}
 
 	/** 순수 함수, 오름차순 기간 목록에서 스트릭 계산, 열려 있는 오늘 기간은 제외 */
@@ -129,22 +146,17 @@ public class PeriodService {
 
 	/**
 	 * 마감 시각이 지난 기간을 순서대로 닫아 periods 에 기록, 서버가 며칠 꺼져 있었어도 빠진 기간을 전부 채움
-	 * logicalDate 는 저장 시점에 확정되므로 닫힌 기간에 인증이 뒤늦게 섞일 수 없음
+	 * 과거 프리즈 사용은 refreshClosedPeriod 에서 해당 기간만 다시 계산
 	 */
 	@Transactional
 	public void closeDuePeriods(Group g) {
+		groups.lockById(g.getId()).orElseThrow();
 		LocalDate current = currentPeriodStart(g);
 		LocalDate next = periods.findTopByGroupIdOrderByPeriodStartDesc(g.getId())
 				.map(Period::getPeriodEnd)
 				.orElse(g.getFirstPeriodStart());
 		while (next.isBefore(current)) {
-			Map<Long, List<CheckIn>> done = checkInsByUser(g, next);
-			long missing = activeMembers(g, next).stream()
-					.filter(m -> done.getOrDefault(m.getUserId(), List.of()).size() < g.target())
-					.count();
-			boolean freezeAvailable = !periods.existsByGroupIdAndStatusAndPeriodStartBetween(
-					g.getId(), Period.Status.FROZEN, next.withDayOfMonth(1), next.with(TemporalAdjusters.lastDayOfMonth()));
-			periods.save(new Period(g.getId(), next, periodEnd(g, next), status(g, missing, freezeAvailable)));
+			periods.save(new Period(g.getId(), next, periodEnd(g, next), result(g, next)));
 			next = periodEnd(g, next);
 		}
 	}

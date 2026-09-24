@@ -51,7 +51,7 @@ public class Group {
 	@Column(nullable = false)
 	private int allowedAbsences;
 
-	/** 월 1회, 실패한 기간을 FROZEN 으로 바꿔 스트릭 유지 */
+	/** 멤버가 날짜를 골라 프리즈로 본인 인증 1회 보충 */
 	@Column(nullable = false)
 	private boolean streakFreeze;
 

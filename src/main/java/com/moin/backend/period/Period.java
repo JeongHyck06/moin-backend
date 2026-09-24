@@ -41,6 +41,9 @@ public class Period {
 	@Column(nullable = false)
 	private Status status;
 
+	/** 과거 날짜 프리즈 사용 후 해당 기간 결과 재집계 */
+	public void updateStatus(Status status) { this.status = status; }
+
 	public Period(Long groupId, LocalDate periodStart, LocalDate periodEnd, Status status) {
 		this.groupId = groupId;
 		this.periodStart = periodStart;

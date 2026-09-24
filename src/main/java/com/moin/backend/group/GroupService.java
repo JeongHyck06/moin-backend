@@ -44,7 +44,7 @@ public class GroupService {
 	/** 선언 순서가 홈 정렬 순서 (Figma GroupCard 설명) */
 	public enum State { NEEDS_ME, WAITING_OTHERS, COMPLETE, CRISIS }
 
-	public record MemberStatus(Long userId, String nickname, String avatarUrl, boolean done, int doneCount, String videoUrl, Long checkInId) {}
+	public record MemberStatus(Long userId, String nickname, String avatarUrl, boolean done, int doneCount, String videoUrl, Long checkInId, boolean frozen) {}
 
 	public record GroupCard(Long id, String name, Group.Frequency frequency, Integer weeklyTarget,
 			@JsonFormat(pattern = "HH:mm") LocalTime resetTime,
@@ -60,6 +60,10 @@ public class GroupService {
 	public record InvitePreview(Long id, String name, Group.Frequency frequency, Integer weeklyTarget,
 			@JsonFormat(pattern = "HH:mm") LocalTime resetTime, int memberCount, int streak,
 			List<MemberStatus> members, boolean alreadyMember, LocalDate joinsFrom) {}
+
+	public Group getForUpdate(Long id) {
+		return groups.lockById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "그룹을 찾을 수 없어요"));
+	}
 
 	public Group get(Long id) {
 		return groups.findById(id)
@@ -117,9 +121,10 @@ public class GroupService {
 		List<MemberStatus> statuses = active.stream().map(m -> {
 			User u = userById.get(m.getUserId());
 			List<CheckIn> cs = byUser.getOrDefault(m.getUserId(), List.of());
-			String video = cs.isEmpty() ? null : cs.get(cs.size() - 1).getVideoUrl();
+			CheckIn latest = cs.stream().filter(c -> !c.isFrozen()).reduce((a, b) -> b).orElse(null);
+			String video = latest == null ? null : latest.getVideoUrl();
 			return new MemberStatus(u.getId(), u.getNickname(), u.getAvatarUrl(), cs.size() >= g.target(), cs.size(), video,
-					cs.isEmpty() ? null : cs.get(cs.size() - 1).getId());
+					latest == null ? null : latest.getId(), cs.stream().anyMatch(CheckIn::isFrozen));
 		}).sorted(Comparator.comparing(MemberStatus::done).reversed().thenComparing(MemberStatus::userId)).toList();
 
 		int completed = (int) statuses.stream().filter(MemberStatus::done).count();
