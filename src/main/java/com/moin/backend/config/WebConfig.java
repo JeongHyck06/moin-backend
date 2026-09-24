@@ -18,12 +18,14 @@ import lombok.RequiredArgsConstructor;
 public class WebConfig implements WebMvcConfigurer {
 
 	private final AuthInterceptor authInterceptor;
+	private final com.moin.backend.storage.FileDeletionService fileDeletion;
 
 	@Value("${moin.upload-dir}")
 	private String uploadDir;
 
 	@Override
 	public void addInterceptors(InterceptorRegistry registry) {
+		registry.addInterceptor(fileDeletion).addPathPatterns("/videos/**", "/avatars/**");
 		registry.addInterceptor(authInterceptor)
 				.addPathPatterns("/**")
 				.excludePathPatterns("/callbacks/admob", "/auth/**", "/app/**", "/error", "/videos/**", "/avatars/**", "/actuator/health", "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**");
