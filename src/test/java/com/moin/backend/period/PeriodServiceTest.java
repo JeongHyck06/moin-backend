@@ -69,9 +69,10 @@ class PeriodServiceTest {
 	@Test
 	void 미완료_인원에_따른_기간_상태() {
 		Group g = group(Group.Frequency.DAILY, 1, true);
-		assertEquals(PERFECT, PeriodService.status(g, 0, true));
-		assertEquals(PASS, PeriodService.status(g, 1, true));
-		assertEquals(FROZEN, PeriodService.status(g, 2, true));
+		assertEquals(PERFECT, PeriodService.status(g, 0, false));
+		assertEquals(PASS, PeriodService.status(g, 1, false));
+		assertEquals(FROZEN, PeriodService.status(g, 0, true));
+		assertEquals(FAILED, PeriodService.status(g, 2, true));
 		assertEquals(FAILED, PeriodService.status(g, 2, false)); // 이번 달 프리즈 이미 사용
 		g.setStreakFreeze(false);
 		assertEquals(FAILED, PeriodService.status(g, 2, true));

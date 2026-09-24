@@ -65,7 +65,7 @@ public class CheckInController {
 	@Transactional
 	public CheckInResult create(@RequestAttribute("userId") Long userId, @PathVariable("groupId") Long groupId,
 			@RequestPart("video") MultipartFile video) {
-		Group g = groupService.get(groupId);
+		Group g = groupService.getForUpdate(groupId);
 		GroupMember me = groupService.membership(groupId, userId);
 		LocalDate periodStart = periodService.currentPeriodStart(g);
 		if (me.getActiveFrom().isAfter(periodStart)) {
@@ -94,7 +94,7 @@ public class CheckInController {
 	}
 
 	/** Feed 화면 한 페이지, 영상 있는 멤버가 앞에 */
-	public record FeedMember(Long userId, String nickname, String avatarUrl, Long checkInId, String videoUrl, Instant createdAt) {}
+	public record FeedMember(Long userId, String nickname, String avatarUrl, Long checkInId, String videoUrl, Instant createdAt, boolean frozen) {}
 	public record Feed(LocalDate date, int completedCount, int activeCount, List<FeedMember> members) {}
 
 	/**
@@ -115,7 +115,7 @@ public class CheckInController {
 			User u = userById.get(m.getUserId());
 			CheckIn c = byUser.get(m.getUserId());
 			return new FeedMember(u.getId(), u.getNickname(), u.getAvatarUrl(),
-					c == null ? null : c.getId(), c == null ? null : c.getVideoUrl(), c == null ? null : c.getCreatedAt());
+					c == null || c.isFrozen() ? null : c.getId(), c == null ? null : c.getVideoUrl(), c == null ? null : c.getCreatedAt(), c != null && c.isFrozen());
 		}).sorted(Comparator.comparing((FeedMember f) -> f.videoUrl() == null).thenComparing(FeedMember::userId)).toList();
 		return new Feed(day, byUser.size(), active.size(), members);
 	}
