@@ -86,6 +86,49 @@ class MoinFlowTest {
 	@Autowired PushDeviceRepository devices;
 	@Autowired GroupMemberRepository memberships;
 	@Autowired PendingMembershipMigration membershipMigration;
+	@Autowired com.moin.backend.checkin.CheckInCommentRepository comments;
+
+	@Test
+	@org.springframework.transaction.annotation.Transactional
+	void 인증_댓글은_그룹_멤버만_작성하고_인증별로_페이지를_조회한다() throws Exception {
+		String owner = login("댓글 작성자");
+		String outsider = login("댓글 외부인");
+		String group = mvc.perform(json(post("/groups"), owner).content("{\"name\":\"댓글 테스트\",\"frequency\":\"DAILY\"}"))
+				.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		long groupId = ((Number) JsonPath.read(group, "$.card.id")).longValue();
+		String checkIn = mvc.perform(multipart("/groups/" + groupId + "/check-ins")
+				.file(new MockMultipartFile("video", "comment.mp4", "video/mp4", new byte[] { 1, 2, 3 }))
+				.header("Authorization", "Bearer " + owner)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		long checkInId = ((Number) JsonPath.read(checkIn, "$.id")).longValue();
+		long userId = ((Number) JsonPath.read(checkIn, "$.group.members[0].userId")).longValue();
+		assertEquals(checkInId, ((Number) JsonPath.read(checkIn, "$.group.members[0].checkInId")).longValue());
+		String url = "/groups/" + groupId + "/check-ins/" + checkInId + "/comments";
+		mvc.perform(get(url)).andExpect(status().isUnauthorized());
+		mvc.perform(json(get(url), outsider)).andExpect(status().isForbidden());
+		mvc.perform(json(post(url), outsider).content("{\"body\":\"침입\"}")).andExpect(status().isForbidden());
+		String otherGroup = mvc.perform(json(post("/groups"), owner).content("{\"name\":\"다른 그룹\",\"frequency\":\"DAILY\"}"))
+				.andReturn().getResponse().getContentAsString();
+		long otherId = ((Number) JsonPath.read(otherGroup, "$.card.id")).longValue();
+		String wrongUrl = "/groups/" + otherId + "/check-ins/" + checkInId + "/comments";
+		mvc.perform(json(get(wrongUrl), owner)).andExpect(status().isNotFound());
+		mvc.perform(json(post(wrongUrl), owner).content("{\"body\":\"다른 인증\"}")).andExpect(status().isNotFound());
+		mvc.perform(json(post(url), owner).content("{\"body\":\"  \"}")).andExpect(status().isBadRequest());
+		mvc.perform(json(post(url), owner).content("{\"body\":\"" + "가".repeat(501) + "\"}")).andExpect(status().isBadRequest());
+		mvc.perform(json(post(url), owner).content("{\"body\":\"  멋져요!  \"}"))
+				.andExpect(status().isCreated()).andExpect(jsonPath("$.body").value("멋져요!"))
+				.andExpect(jsonPath("$.nickname").value("댓글 작성자")).andExpect(jsonPath("$.userId").value(userId));
+		mvc.perform(json(get(url), owner)).andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[0].body").value("멋져요!")).andExpect(jsonPath("$.nextCursor").isEmpty());
+		for (int i = 0; i < 30; i++) comments.save(new com.moin.backend.checkin.CheckInComment(checkInId, userId, "댓글 " + i, clock.instant()));
+		comments.flush();
+		String page = mvc.perform(json(get(url), owner)).andExpect(jsonPath("$.items.length()").value(30))
+				.andExpect(jsonPath("$.items[0].body").value("댓글 29")).andReturn().getResponse().getContentAsString();
+		long cursor = ((Number) JsonPath.read(page, "$.nextCursor")).longValue();
+		mvc.perform(json(get(url).param("before", Long.toString(cursor)), owner))
+				.andExpect(jsonPath("$.items.length()").value(1)).andExpect(jsonPath("$.items[0].body").value("멋져요!"))
+				.andExpect(jsonPath("$.nextCursor").isEmpty());
+		mvc.perform(json(get(url).param("before", "0"), owner)).andExpect(status().isBadRequest());
+	}
 
 	@Test
 	void 프로필_사진과_닉네임은_본인만_변경하고_재로그인에도_유지한다() throws Exception {
