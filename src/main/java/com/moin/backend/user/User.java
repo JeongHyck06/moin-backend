@@ -34,6 +34,11 @@ public class User {
 
 	private String avatarUrl;
 
+	/** 구매·광고로 획득한 계정 공용 프리즈, 차감은 사용자 행 잠금 안에서만 */
+	@Column(nullable = false)
+	@org.hibernate.annotations.ColumnDefault("0")
+	private int freezeBalance;
+
 	@Embedded
 	private NotificationSettings notifications = new NotificationSettings();
 
