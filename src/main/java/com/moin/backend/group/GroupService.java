@@ -44,7 +44,7 @@ public class GroupService {
 	/** 선언 순서가 홈 정렬 순서 (Figma GroupCard 설명) */
 	public enum State { NEEDS_ME, WAITING_OTHERS, COMPLETE, CRISIS }
 
-	public record MemberStatus(Long userId, String nickname, String avatarUrl, boolean done, int doneCount, String videoUrl) {}
+	public record MemberStatus(Long userId, String nickname, String avatarUrl, boolean done, int doneCount, String videoUrl, Long checkInId) {}
 
 	public record GroupCard(Long id, String name, Group.Frequency frequency, Integer weeklyTarget,
 			@JsonFormat(pattern = "HH:mm") LocalTime resetTime,
@@ -118,7 +118,8 @@ public class GroupService {
 			User u = userById.get(m.getUserId());
 			List<CheckIn> cs = byUser.getOrDefault(m.getUserId(), List.of());
 			String video = cs.isEmpty() ? null : cs.get(cs.size() - 1).getVideoUrl();
-			return new MemberStatus(u.getId(), u.getNickname(), u.getAvatarUrl(), cs.size() >= g.target(), cs.size(), video);
+			return new MemberStatus(u.getId(), u.getNickname(), u.getAvatarUrl(), cs.size() >= g.target(), cs.size(), video,
+					cs.isEmpty() ? null : cs.get(cs.size() - 1).getId());
 		}).sorted(Comparator.comparing(MemberStatus::done).reversed().thenComparing(MemberStatus::userId)).toList();
 
 		int completed = (int) statuses.stream().filter(MemberStatus::done).count();
