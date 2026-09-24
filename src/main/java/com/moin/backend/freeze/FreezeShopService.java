@@ -24,7 +24,7 @@ public class FreezeShopService {
     @Value("${moin.admob.android-unit:}") private String androidUnit;
     @Value("${moin.admob.ios-unit:}") private String iosUnit;
     public record Wallet(int balance, boolean adAvailable, LocalDate nextAdDate, String productId,
-            String accountToken, boolean appleReady, boolean googleReady, String androidAdUnit, String iosAdUnit) {}
+            java.util.List<StoreVerifier.Product> products, String accountToken, boolean appleReady, boolean googleReady, String androidAdUnit, String iosAdUnit) {}
     public record Session(String id) {}
     private LocalDate week() { return LocalDate.now(clock.withZone(zone)).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)); }
     private String adKey(Long id, LocalDate week) { return "ad-week:" + id + ":" + week; }
@@ -32,7 +32,7 @@ public class FreezeShopService {
         var user = users.findById(userId).orElseThrow();
         boolean available = !grants.existsById(adKey(userId, week()));
         return new Wallet(user.getFreezeBalance(), available, week().plusWeeks(1), StoreVerifier.PRODUCT,
-                StoreVerifier.account(userId).toString(), store.appleReady(), store.googleReady(), androidUnit, iosUnit);
+                StoreVerifier.PRODUCTS, StoreVerifier.account(userId).toString(), store.appleReady(), store.googleReady(), androidUnit, iosUnit);
     }
 
     @Transactional
