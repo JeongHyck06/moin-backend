@@ -33,6 +33,11 @@ public class User {
 	private String nickname;
 
 	private String avatarUrl;
+	private String termsVersion;
+	private Instant termsAcceptedAt;
+	@Column(nullable = false)
+	@org.hibernate.annotations.ColumnDefault("false")
+	private boolean suspended;
 
 	/** 구매·광고로 획득한 계정 공용 프리즈, 차감은 사용자 행 잠금 안에서만 */
 	@Column(nullable = false)

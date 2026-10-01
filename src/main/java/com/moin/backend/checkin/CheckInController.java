@@ -45,6 +45,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CheckInController {
 
+	private final com.moin.backend.safety.SafetyService safety;
 	private final CheckInRepository checkIns;
 	private final VideoStorage storage;
 	private final GroupService groupService;
@@ -84,7 +85,8 @@ public class CheckInController {
 
 	/** 전원 완료면 축하를, 아니면 "누가 인증했어요" 를 나 빼고 활동 멤버에게 */
 	private void notifyOthers(Group g, GroupCard card, Long actor, boolean allComplete) {
-		List<Long> others = card.members().stream().map(MemberStatus::userId).filter(id -> !id.equals(actor)).toList();
+		var blocked = safety.blocked(actor);
+		List<Long> others = card.members().stream().map(MemberStatus::userId).filter(id -> !id.equals(actor) && !blocked.contains(id)).toList();
 		String me = card.members().stream().filter(m -> m.userId().equals(actor)).map(MemberStatus::nickname).findFirst().orElse("멤버");
 		if (allComplete) {
 			push.send(g, PushService.Kind.ALL_COMPLETE, others, g.getName(), "오늘 전원 완료, 스트릭 " + (card.streak() + 1) + "일");
@@ -111,11 +113,14 @@ public class CheckInController {
 		Map<Long, CheckIn> byUser = checkIns.findByGroupIdAndLogicalDateBetweenOrderByCreatedAtAsc(groupId, day, day)
 				.stream().collect(toMap(CheckIn::getUserId, identity()));
 		Map<Long, User> userById = groupService.usersOf(active);
-		List<FeedMember> members = active.stream().map(m -> {
+		var blocked = safety.blocked(userId);
+		var hidden = safety.hidden(userId, "CHECK_IN");
+		List<FeedMember> members = active.stream().filter(m -> !blocked.contains(m.getUserId()) && !userById.get(m.getUserId()).isSuspended()).map(m -> {
 			User u = userById.get(m.getUserId());
 			CheckIn c = byUser.get(m.getUserId());
+			if (u.isSuspended() || (c != null && hidden.contains(c.getId()))) c = null;
 			return new FeedMember(u.getId(), u.getNickname(), u.getAvatarUrl(),
-					c == null || c.isFrozen() ? null : c.getId(), c == null ? null : c.getVideoUrl(), c == null ? null : c.getCreatedAt(), c != null && c.isFrozen());
+					c == null || c.getVideoUrl() == null ? null : c.getId(), c == null ? null : c.getVideoUrl(), c == null ? null : c.getCreatedAt(), c != null && c.isFrozen());
 		}).sorted(Comparator.comparing((FeedMember f) -> f.videoUrl() == null).thenComparing(FeedMember::userId)).toList();
 		return new Feed(day, byUser.size(), active.size(), members);
 	}

@@ -45,6 +45,7 @@ public class GroupController {
 	private final GroupRepository groups;
 	private final com.moin.backend.user.UserRepository users;
 	private final GroupMemberRepository members;
+	private final com.moin.backend.safety.SafetyService safety;
 	private final GroupService groupService;
 	private final PeriodService periodService;
 
@@ -80,6 +81,7 @@ public class GroupController {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "주당 횟수를 정해주세요");
 		}
 		Group g = new Group();
+		safety.validateText(body.name());
 		g.setName(body.name());
 		g.setFrequency(body.frequency());
 		g.setWeeklyTarget(weekly ? body.weeklyTarget() : null);
@@ -109,6 +111,7 @@ public class GroupController {
 		Group g = groupService.getForUpdate(id);
 		GroupMember me = groupService.membership(id, userId);
 		if (!g.getOwnerId().equals(userId)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "방장만 바꿀 수 있어요");
+		safety.validateText(body.name());
 		g.setName(body.name());
 		return groupService.detail(groups.save(g), me);
 	}

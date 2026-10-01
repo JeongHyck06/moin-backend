@@ -687,6 +687,39 @@ class MoinFlowTest {
 		deletion.delete(users.findByExternalId("dev:탈퇴 보존 멤버").orElseThrow().getId(), true);
 	}
 
+    @Test
+    void 동의_신고_차단과_운영자_권한을_검증한다() throws Exception {
+        String raw = mvc.perform(post("/auth/dev").contentType(MediaType.APPLICATION_JSON).content("{\"nickname\":\"동의전 계정\"}")).andReturn().getResponse().getContentAsString();
+        String unaccepted = JsonPath.read(raw,"$.token");
+        mvc.perform(json(post("/groups"),unaccepted).content("{\"name\":\"동의 없는 그룹\",\"frequency\":\"DAILY\"}")).andExpect(status().is(428));
+        mvc.perform(json(post("/me/terms"),unaccepted).content("{\"version\":\"2026-10-01\",\"accepted\":true,\"ageConfirmed\":false}")).andExpect(status().isBadRequest());
+        String owner=login("안전 작성자"), viewer=login("안전 열람자"), stranger=login("안전 외부인");
+        String group=mvc.perform(json(post("/groups"),owner).content("{\"name\":\"안전 검증\",\"frequency\":\"DAILY\"}")).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        long groupId=((Number)JsonPath.read(group,"$.card.id")).longValue();
+        String code=JsonPath.read(group,"$.inviteCode");
+        mvc.perform(json(post("/groups/invite/"+code+"/join"),viewer)).andExpect(status().isCreated());
+        String video=mvc.perform(multipart("/groups/"+groupId+"/check-ins").file(new MockMultipartFile("video","safe.mp4","video/mp4",new byte[]{1,2,3})).header("Authorization","Bearer "+owner)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        long target=((Number)JsonPath.read(video,"$.id")).longValue();
+        String profile=mvc.perform(json(get("/me"),owner)).andReturn().getResponse().getContentAsString();
+        long author=((Number)JsonPath.read(profile,"$.id")).longValue();
+        String commentPath="/groups/"+groupId+"/check-ins/"+target+"/comments";
+        mvc.perform(json(post(commentPath),viewer).content("{\"body\":\"죽여버릴\"}")).andExpect(status().isBadRequest());
+        String report="{\"groupId\":"+groupId+",\"kind\":\"CHECK_IN\",\"targetId\":"+target+",\"reason\":\"위협 콘텐츠\"}";
+        mvc.perform(json(post("/reports"),stranger).content(report)).andExpect(status().isForbidden());
+        mvc.perform(json(post("/reports"),owner).content(report)).andExpect(status().isBadRequest());
+        mvc.perform(json(post("/reports"),viewer).content(report)).andExpect(status().isCreated());
+        mvc.perform(json(post("/reports"),viewer).content(report)).andExpect(status().isConflict());
+        mvc.perform(json(get(commentPath),viewer)).andExpect(status().isNotFound());
+        mvc.perform(json(get("/moderation/reports"),viewer)).andExpect(status().isForbidden());
+        mvc.perform(json(put("/me/blocks/"+author),stranger)).andExpect(status().isForbidden());
+        mvc.perform(json(put("/me/blocks/"+author),viewer)).andExpect(status().isNoContent());
+        mvc.perform(json(get("/groups/"+groupId+"/check-ins"),viewer)).andExpect(jsonPath("$.members.length()").value(1));
+        mvc.perform(json(get("/me/blocks"),viewer)).andExpect(jsonPath("$[0].userId").value(author));
+        mvc.perform(json(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/me/blocks/"+author),viewer)).andExpect(status().isNoContent());
+        mvc.perform(get("/legal/privacy.html")).andExpect(status().isOk());
+        mvc.perform(get("/legal/delete-account.html")).andExpect(status().isOk());
+    }
+
 	private String login(String nickname) throws Exception {
 		String body = mvc.perform(post("/auth/dev")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -694,7 +727,9 @@ class MoinFlowTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.nickname").value(nickname))
 				.andReturn().getResponse().getContentAsString();
-		return JsonPath.read(body, "$.token");
+		String token = JsonPath.read(body, "$.token");
+        mvc.perform(json(post("/me/terms"),token).content("{\"version\":\"2026-10-01\",\"accepted\":true,\"ageConfirmed\":true}")).andExpect(status().isNoContent());
+        return token;
 	}
 
 	private static MockHttpServletRequestBuilder json(MockHttpServletRequestBuilder b, String token) {

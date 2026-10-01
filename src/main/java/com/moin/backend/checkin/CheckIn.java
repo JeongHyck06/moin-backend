@@ -47,11 +47,15 @@ public class CheckIn {
 	@Column(nullable = false)
 	@org.hibernate.annotations.ColumnDefault("false")
 	private boolean frozen;
+	@Column(nullable = false)
+	@org.hibernate.annotations.ColumnDefault("false")
+	private boolean removed;
+	public void removeVideo() { removed = true; }
 
 	public boolean isFrozen() { return frozen; }
 
 	/** 기존 NOT NULL 영상 컬럼은 유지하고 API에는 가짜 영상 주소를 내보내지 않음 */
-	public String getVideoUrl() { return isFrozen() ? null : videoUrl; }
+	public String getVideoUrl() { return isFrozen() || removed ? null : videoUrl; }
 
 	public static CheckIn freeze(Long groupId, Long userId, LocalDate date, LocalDate month, Instant now) {
 		CheckIn c = new CheckIn(groupId, userId, date, "", now);
