@@ -17,6 +17,8 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor
 public class AccountDeletionService {
+    private final com.moin.backend.safety.UserBlockRepository blocks;
+    private final com.moin.backend.safety.ContentReportRepository reports;
     private final UserRepository users;
     private final GroupRepository groups;
     private final GroupMemberRepository members;
@@ -60,6 +62,8 @@ public class AccountDeletionService {
         adSessions.deleteByUserId(userId);
         grants.deleteByUserId(userId);
         boolean apple = user.getExternalId().startsWith("apple:");
+        blocks.deleteByOwnerIdOrTargetId(userId,userId);
+        reports.deleteByReporterIdOrTargetUserId(userId,userId);
         users.delete(user);
         // 기존 Apple 로그인은 갱신 토큰을 보관하지 않아 TN3194의 수동 연결 해제 안내 사용
         return new Result(apple);

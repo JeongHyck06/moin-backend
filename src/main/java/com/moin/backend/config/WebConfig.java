@@ -28,7 +28,7 @@ public class WebConfig implements WebMvcConfigurer {
 		registry.addInterceptor(fileDeletion).addPathPatterns("/videos/**", "/avatars/**");
 		registry.addInterceptor(authInterceptor)
 				.addPathPatterns("/**")
-				.excludePathPatterns("/callbacks/admob", "/auth/**", "/app/**", "/error", "/videos/**", "/avatars/**", "/actuator/health", "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**");
+				.excludePathPatterns("/legal/**", "/callbacks/admob", "/auth/**", "/app/**", "/error", "/videos/**", "/avatars/**", "/actuator/health", "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**");
 	}
 
 	/** 업로드 디렉터리를 /videos/** 로 그대로 서빙, 파일명이 UUID 라 인증 없이 열어도 추측 불가 */

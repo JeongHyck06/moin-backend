@@ -45,6 +45,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class MeController {
 
+	private final com.moin.backend.safety.SafetyService safety;
 	private final UserRepository users;
 	private final GroupRepository groups;
 	private final GroupMemberRepository members;
@@ -84,6 +85,7 @@ public class MeController {
 	public Profile updateProfile(@RequestAttribute("userId") Long userId,
 			@RequestParam("nickname") String nickname, @RequestPart(value = "avatar", required = false) MultipartFile avatar) {
 		String name = nickname.strip();
+		safety.validateText(name);
 		if (name.isBlank() || name.length() > 20) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "닉네임은 1~20자로 입력해주세요");
 		}

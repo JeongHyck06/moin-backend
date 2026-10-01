@@ -36,6 +36,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CheckInCommentController {
 	private static final int PAGE_SIZE = 30;
+	private final com.moin.backend.safety.SafetyService safety;
 	private final CheckInCommentRepository comments;
 	private final CheckInRepository checkIns;
 	private final GroupService groups;
@@ -59,7 +60,9 @@ public class CheckInCommentController {
 		List<CheckInComment> page = found.stream().limit(PAGE_SIZE).toList();
 		Map<Long, User> authors = users.findAllById(page.stream().map(CheckInComment::getUserId).distinct().toList())
 				.stream().collect(Collectors.toMap(User::getId, Function.identity()));
-		return new CommentPage(page.stream().map(c -> view(c, authors.get(c.getUserId()))).toList(),
+		var blocked = safety.blocked(userId);
+        var hidden = safety.hidden(userId,"COMMENT");
+        return new CommentPage(page.stream().filter(c -> !blocked.contains(c.getUserId()) && !hidden.contains(c.getId())).filter(c -> authors.get(c.getUserId()) == null || !authors.get(c.getUserId()).isSuspended()).map(c -> view(c, authors.get(c.getUserId()))).toList(),
 				found.size() > PAGE_SIZE ? page.get(PAGE_SIZE - 1).getId() : null);
 	}
 
@@ -71,6 +74,7 @@ public class CheckInCommentController {
 		groups.getForUpdate(groupId);
 		checkAccess(groupId, checkInId, userId);
 		String body = request.body().strip();
+		safety.validateText(body);
 		if (body.isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "댓글을 입력해주세요");
 		CheckInComment saved = comments.save(new CheckInComment(checkInId, userId, body, periods.now()));
 		return view(saved, users.findById(userId).orElseThrow());
@@ -78,7 +82,7 @@ public class CheckInCommentController {
 
 	private void checkAccess(Long groupId, Long checkInId, Long userId) {
 		groups.membership(groupId, userId);
-		checkIns.findById(checkInId).filter(c -> c.getGroupId().equals(groupId))
+		checkIns.findById(checkInId).filter(c -> c.getGroupId().equals(groupId) && c.getVideoUrl() != null && users.findById(c.getUserId()).filter(u -> !u.isSuspended()).isPresent() && !safety.blocked(userId).contains(c.getUserId()) && !safety.hidden(userId,"CHECK_IN").contains(c.getId()))
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "인증을 찾을 수 없어요"));
 	}
 

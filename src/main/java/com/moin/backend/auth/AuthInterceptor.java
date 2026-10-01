@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class AuthInterceptor implements HandlerInterceptor {
 
+	private final com.moin.backend.safety.SafetyService safety;
 	private final SessionRepository sessions;
 	private final com.moin.backend.user.UserRepository users;
 	private final Clock clock;
@@ -29,8 +30,11 @@ public class AuthInterceptor implements HandlerInterceptor {
 		Session session = sessions.findById(header.substring(7))
 				.filter(s -> s.getExpiresAt().isAfter(clock.instant()))
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "세션이 만료됐어요"));
-		if (!users.existsById(session.getUserId())) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
-		req.setAttribute("userId", session.getUserId());
+		var user = users.findById(session.getUserId()).orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        boolean deletion = req.getRequestURI().equals("/me") && req.getMethod().equals("DELETE");
+        if (user.isSuspended() && !deletion && !req.getRequestURI().equals("/me/logout")) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"이용이 제한된 계정이에요. 고객지원으로 문의하거나 계정을 삭제할 수 있어요");
+		if (!java.util.Set.of("GET","HEAD","OPTIONS","DELETE").contains(req.getMethod()) && (req.getRequestURI().startsWith("/groups") || req.getRequestURI().equals("/me/profile"))) safety.requireTerms(session.getUserId());
+        req.setAttribute("userId", session.getUserId());
 		return true;
 	}
 }

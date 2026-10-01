@@ -32,6 +32,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class GroupService {
 
+	private final com.moin.backend.safety.SafetyService safety;
 	private final GroupRepository groups;
 	private final GroupMemberRepository members;
 	private final UserRepository users;
@@ -118,13 +119,16 @@ public class GroupService {
 		Map<Long, List<CheckIn>> byUser = periodService.checkInsByUser(g, start);
 		Map<Long, User> userById = usersOf(active);
 
+		var blocked = safety.blocked(me);
+		var hidden = safety.hidden(me, "CHECK_IN");
 		List<MemberStatus> statuses = active.stream().map(m -> {
 			User u = userById.get(m.getUserId());
 			List<CheckIn> cs = byUser.getOrDefault(m.getUserId(), List.of());
 			CheckIn latest = cs.stream().filter(c -> !c.isFrozen()).reduce((a, b) -> b).orElse(null);
-			String video = latest == null ? null : latest.getVideoUrl();
-			return new MemberStatus(u.getId(), u.getNickname(), u.getAvatarUrl(), cs.size() >= g.target(), cs.size(), video,
-					latest == null ? null : latest.getId(), cs.stream().anyMatch(CheckIn::isFrozen));
+			boolean concealed = blocked.contains(u.getId()) || u.isSuspended();
+			String video = latest == null || concealed || hidden.contains(latest.getId()) ? null : latest.getVideoUrl();
+			return new MemberStatus(u.getId(), concealed ? "숨긴 사용자" : u.getNickname(), concealed ? null : u.getAvatarUrl(), cs.size() >= g.target(), cs.size(), video,
+					video == null ? null : latest.getId(), cs.stream().anyMatch(CheckIn::isFrozen));
 		}).sorted(Comparator.comparing(MemberStatus::done).reversed().thenComparing(MemberStatus::userId)).toList();
 
 		int completed = (int) statuses.stream().filter(MemberStatus::done).count();
